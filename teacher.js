@@ -1,4 +1,4 @@
-// 교사 화면: 로그인 → 수업 고르기 → [수업 진행] [질문·설문 만들기] [학생 관리] [수업 설정]
+// 교사 화면(버전 2): 로그인 → 수업 고르기 → [수업 진행] [질문·설문 만들기] [학생 관리] [수업 설정]
 // 수업 진행·학생 관리 탭은 3초마다 응답을 다시 읽어 온다.
 
 const app = document.getElementById("app");
@@ -13,6 +13,7 @@ let tab = localStorage.getItem("cra-tab") || "run";
 let timer = null;
 let editing = null;       // 만들기 탭에서 고치는 중인 활동(사본)
 let main = null;
+let me = null;            // 로그인한 교사(auth user)
 
 if (!sb) notConfigured(app);
 else init();
@@ -21,11 +22,12 @@ else init();
 async function init() {
   const { data } = await sb.auth.getSession();
   if (!data.session) return showLogin();
+  me = data.session.user;
   const { data: ok, error } = await sb.rpc("is_teacher");
   if (error || !ok) {
     return app.replaceChildren(h("main", { class: "narrow" }, h("section", { class: "card stack" },
       h("h1", {}, "교사로 등록되지 않은 계정입니다"),
-      h("p", {}, (data.session.user.email || "") + " 이메일이 teachers 표에 없습니다. setup.sql 맨 아래에 이 이메일을 넣고 다시 실행하세요."),
+      h("p", {}, (me.email || "") + " 이메일이 teachers 표에 없습니다. setup.sql 맨 아래에 이 이메일을 넣고 다시 실행하세요."),
       error ? h("p", { class: "error" }, error.message) : null,
       h("button", { class: "ghost", type: "button", async onclick() { await sb.auth.signOut(); location.reload(); } }, "로그아웃"))));
   }
@@ -88,7 +90,7 @@ function sortActivities(list) {
 
 async function loadResponses() {
   if (!lesson) return;
-  const st = await sb.from("students").select("id,class_no,name,pin_set,fails,locked_until,created_at").eq("lesson_id", lesson.id);
+  const st = await sb.from("students").select("id,class_no,name,pin_set,fails,locked_until,created_at,last_seen").eq("lesson_id", lesson.id);
   if (st.error) return fatal(st.error);
   students = st.data.sort((x, y) => x.class_no.localeCompare(y.class_no, "ko", { numeric: true }) || x.name.localeCompare(y.name, "ko"));
   const ids = activities.map((a) => a.id);
@@ -138,9 +140,10 @@ function draw() {
       else lesson = lessons.find((l) => l.id === pick.value);
       await loadLesson();
     },
-  }, lessons.map((l) => h("option", { value: l.id, selected: lesson && l.id === lesson.id }, l.title + " (" + l.code + ")")),
+  }, lessons.map((l) => h("option", { value: l.id, selected: lesson && l.id === lesson.id }, (l.kind === "survey" ? "[설문] " : "") + l.title + " (" + l.code + ")")),
     h("option", { value: "new", selected: !lesson }, "+ 새 수업 만들기"));
   const tabs = [["run", "수업 진행"], ["build", "질문·설문 만들기"], ["students", "학생 관리"], ["settings", "수업 설정"]];
+  if (!tabs.some(([k]) => k === tab)) tab = "run";
   main = h("main", { class: "wide" });
   app.replaceChildren(
     h("header", { class: "top" },
@@ -168,10 +171,11 @@ function drawRun() {
   const openText = h("span", {});
   const stage = h("div", { class: "stage" }, img);
   const panel = h("div", { class: "stack" });
+  const roster = h("section", { class: "card stack" });
   const hasSlides = lesson.slide_count > 0;
   main.replaceChildren(h("div", { class: "run" },
     h("div", { class: "run-left stack" },
-      hasSlides ? stage : h("p", { class: "card muted" }, "슬라이드가 없는 수업입니다. 학생 화면에는 모든 활동이 보입니다."),
+      hasSlides ? stage : h("p", { class: "card muted" }, lesson.kind === "survey" ? "설문 전용입니다. 학생 화면에는 모든 설문이 보입니다." : "슬라이드가 없는 수업입니다. 학생 화면에는 모든 활동이 보입니다."),
       hasSlides ? h("nav", { class: "pager" }, prev, where, next, h("span", { class: "spacer" }),
         h("button", { class: "ghost", type: "button", onclick() { if (stage.requestFullscreen) stage.requestFullscreen(); } }, "전체 화면")) : null,
       h("div", { class: "row" },
@@ -180,8 +184,9 @@ function drawRun() {
       hasSlides ? h("p", { class: "muted small" }, "학생 화면은 여기서 띄운 쪽을 따라갑니다. 키보드 ← → 로도 넘길 수 있습니다.") : null),
     h("aside", { class: "run-right stack" },
       h("section", { class: "card row between" }, openText, openBtn),
+      roster,
       panel)));
-  run = { img, where, prev, next, openBtn, openText, panel, blocks: new Map() };
+  run = { img, where, prev, next, openBtn, openText, panel, roster, blocks: new Map() };
   refreshRun();
 }
 
@@ -202,8 +207,32 @@ function refreshRun() {
   run.openBtn.textContent = L.open ? "제출 마감" : "제출 열기";
 
   const shown = activities.filter((a) => L.slide_count === 0 || a.page === L.page || a.page == null);
+  drawRoster(shown);
   run.panel.replaceChildren(...(shown.length ? shown.map(runBlock)
     : [h("p", { class: "card muted" }, L.page + "쪽에는 활동이 없습니다. 「질문·설문 만들기」에서 추가하세요.")]));
+}
+
+// 접속한 학생: 초록 = 지금 화면을 열어 둔 학생(20초 안에 서버에 물어봄), ✓ = 이 쪽 활동에 답함
+const ONLINE_MS = 20000;
+function rosterChips(shown, big) {
+  const now = Date.now();
+  const ids = new Set(shown.map((a) => a.id));
+  return h("div", { class: "roster" + (big ? " big" : "") }, students.map((s) => {
+    const on = s.last_seen && now - Date.parse(s.last_seen) < ONLINE_MS;
+    const done = shown.length && responses.some((r) => r.student_id === s.id && ids.has(r.activity_id));
+    return h("span", { class: "chip" + (on ? " on" : "") + (done ? " done" : ""), title: on ? "접속 중" : "접속 끊김" }, nameOf(s));
+  }));
+}
+
+function drawRoster(shown) {
+  const now = Date.now();
+  const online = students.filter((s) => s.last_seen && now - Date.parse(s.last_seen) < ONLINE_MS).length;
+  run.roster.replaceChildren(
+    h("div", { class: "row between" },
+      h("h2", {}, "접속 중 " + online + "명", h("span", { class: "muted small" }, " · 입장 " + students.length + "명")),
+      h("button", { class: "ghost", type: "button", onclick() { openModal("입장한 학생", rosterChips(shown, true)); } }, "크게 보기")),
+    students.length ? rosterChips(shown) : h("p", { class: "muted small" }, "아직 입장한 학생이 없습니다."),
+    students.length ? h("p", { class: "muted small" }, "초록색: 지금 접속 중 · ✓: " + (lesson.slide_count ? "이 쪽" : "") + " 활동에 답함") : h("span", {}));
 }
 
 function runBlock(a) {
@@ -230,7 +259,7 @@ function runBlock(a) {
 
 function responseTable(a) {
   return h("div", { class: "table-wrap" }, h("table", {},
-    h("thead", {}, h("tr", {}, h("th", {}, "반·번호"), h("th", {}, "이름"), a.kind === "quiz" ? h("th", {}, "점수") : null,
+    h("thead", {}, h("tr", {}, h("th", {}, "학번"), h("th", {}, "이름"), a.kind === "quiz" ? h("th", {}, "점수") : null,
       a.questions.map((q, i) => h("th", {}, (i + 1) + ". " + q.text)), h("th", {}, "저장"))),
     h("tbody", {}, students.map((s) => {
       const r = responses.find((x) => x.activity_id === a.id && x.student_id === s.id);
@@ -286,7 +315,8 @@ function drawBuild() {
     type: "button", class: "act-item" + (editing && editing.id === a.id ? " on" : ""),
     onclick() { editing = JSON.parse(JSON.stringify(a)); drawBuild(); },
   }, h("span", { class: "muted small" }, KIND_NAME[a.kind] + " · " + whereText(a)), h("span", {}, a.title))) : h("p", { class: "muted small" }, "아직 활동이 없습니다."));
-  const kinds = h("div", { class: "kinds" }, Object.entries({ slide: "쪽 아래에 붙는 질문", survey: "정답 없는 설문", quiz: "정답·자동 채점" }).map(([k, sub]) =>
+  const kindList = lesson.kind === "survey" ? { survey: "정답 없는 설문", quiz: "정답·자동 채점" } : { slide: "쪽 아래에 붙는 질문", survey: "정답 없는 설문", quiz: "정답·자동 채점" };
+  const kinds = h("div", { class: "kinds" }, Object.entries(kindList).map(([k, sub]) =>
     h("button", {
       type: "button", class: "kind",
       onclick() {
@@ -458,48 +488,59 @@ function drawStudents() {
       h("h2", {}, "학생 " + students.length + "명"),
       h("p", { class: "muted small" }, "비밀번호는 암호화되어 있어 교사도 볼 수 없습니다. 잊은 학생은 초기화해 주세요.")),
     students.length ? h("div", { class: "table-wrap" }, h("table", {},
-      h("thead", {}, h("tr", {}, ["반·번호", "이름", "저장한 활동", "마지막 저장", "상태", ""].map((t) => h("th", {}, t)))),
+      h("thead", {}, h("tr", {}, ["학번", "이름", "저장한 활동", "마지막 저장", "상태", ""].map((t) => h("th", {}, t)))),
       h("tbody", {}, rows))) : h("p", { class: "muted" }, "아직 입장한 학생이 없습니다.")));
 }
 
 // ---------- 수업 설정 ----------
 function drawSettings() {
-  const l = lesson || { code: "", title: "", slide_dir: "slides", slide_count: 0 };
-  const code = h("input", { type: "text", maxlength: 20, value: l.code, placeholder: "예: 3반 (띄어쓰기 없이)" });
-  const title = h("input", { type: "text", maxlength: 100, value: l.title, placeholder: "예: 2학년 3반 · 열의 이동" });
-  const dir = h("input", { type: "text", maxlength: 100, value: l.slide_dir });
-  const count = h("input", { type: "number", min: 0, max: 300, value: l.slide_count, class: "num" });
+  const title = h("input", { type: "text", maxlength: 100, value: lesson ? lesson.title : "", placeholder: "예: 2학년 3반 · 열의 이동" });
   const msg = h("p", { class: "error" });
+  let kind = "lesson";
+  const kindPick = h("fieldset", { class: "options" }, h("legend", {}, "무엇을 만들까요?"),
+    [["lesson", "슬라이드 수업", "PDF 슬라이드를 띄우며 쪽마다 질문"], ["survey", "설문만", "슬라이드 없이 설문·퀴즈 링크 하나"]].map(([k, name, sub]) =>
+      h("label", { class: "option" }, h("input", { type: "radio", name: "lesson-kind", checked: k === kind, onchange() { kind = k; } }),
+        h("span", {}, h("strong", {}, name), " · ", h("span", { class: "muted small" }, sub)))));
 
   async function submit(ev) {
     ev.preventDefault();
-    const row = { code: code.value.replace(/\s/g, ""), title: title.value.trim(), slide_dir: dir.value.trim() || "slides", slide_count: parseInt(count.value, 10) || 0 };
-    if (!row.code || !row.title) { msg.textContent = "수업 코드와 제목을 입력하세요."; return; }
-    const saved = await save("lessons", row, lesson && lesson.id);
-    if (!saved) return;
-    if (!lesson) tab = "build";
-    await loadLessons(saved.id);
-    flash("저장했습니다.");
+    const t = title.value.trim();
+    if (!t) { msg.textContent = "수업 제목을 입력하세요."; return; }
+    if (lesson) {
+      const saved = await save("lessons", { title: t }, lesson.id);
+      if (!saved) return;
+      await loadLessons(saved.id);
+      flash("저장했습니다.");
+      return;
+    }
+    const { data, error } = await sb.rpc("create_lesson", { p_title: t, p_kind: kind });
+    if (error) { msg.textContent = "만들지 못했습니다: " + error.message; return; }
+    tab = "settings";
+    if (data.kind === "survey") tab = "build";
+    await loadLessons(data.id);
+    flash(data.kind === "survey" ? "설문을 만들었습니다. 이제 질문을 넣으세요." : "수업을 만들었습니다. 이제 슬라이드를 올리세요.");
+    return;
   }
 
   async function duplicate() {
-    const newCode = (prompt("복제한 수업의 새 수업 코드 (예: 4반)") || "").replace(/\s/g, "");
-    if (!newCode) return;
-    const copy = await save("lessons", { code: newCode, title: lesson.title.replace(/\S*반/, newCode), slide_dir: lesson.slide_dir, slide_count: lesson.slide_count });
-    if (!copy) return;
+    const { data: copy, error } = await sb.rpc("create_lesson", { p_title: (lesson.title + " (복사)").slice(0, 100), p_kind: lesson.kind });
+    if (error) return alert("복제하지 못했습니다: " + error.message);
+    // 슬라이드 그림은 같은 것을 함께 쓴다(원래 수업을 지워도 다른 수업이 쓰는 그림은 남긴다)
+    await sb.from("lessons").update({ slide_dir: lesson.slide_dir, slide_count: lesson.slide_count }).eq("id", copy.id);
     if (activities.length) {
-      const { error } = await sb.from("activities").insert(activities.map((a) => ({
+      const r = await sb.from("activities").insert(activities.map((a) => ({
         lesson_id: copy.id, kind: a.kind, title: a.title, page: a.page, show_answer: a.show_answer, named: a.named, questions: a.questions, sort: a.sort,
       })));
-      if (error) alert("활동을 복사하지 못했습니다: " + error.message);
+      if (r.error) alert("활동을 복사하지 못했습니다: " + r.error.message);
     }
     await loadLessons(copy.id);
-    flash("복제했습니다. 제목을 확인하세요.");
+    flash("복제했습니다. 제목을 고쳐 주세요.");
   }
 
   async function remove() {
-    const typed = prompt("수업을 지우면 활동, 학생, 응답이 모두 지워집니다.\n지우려면 수업 코드 「" + lesson.code + "」를 입력하세요.");
-    if (typed !== lesson.code) return;
+    const typed = prompt("수업을 지우면 활동, 학생, 응답, 슬라이드가 모두 지워집니다.\n지우려면 수업 코드 「" + lesson.code + "」를 입력하세요.");
+    if ((typed || "").trim().toUpperCase() !== lesson.code) return;
+    await removeSlideFiles(lesson);
     const { error } = await sb.from("lessons").delete().eq("id", lesson.id);
     if (error) return alert(error.message);
     await loadLessons(null);
@@ -507,15 +548,13 @@ function drawSettings() {
 
   main.replaceChildren(h("div", { class: "stack narrowish" },
     h("form", { class: "card stack", onsubmit: submit },
-      h("h2", {}, lesson ? "수업 설정" : "새 수업 만들기"),
-      h("label", {}, "수업 코드 (학생이 입력하거나 링크에 들어감)", code),
-      h("label", {}, "수업 제목", title),
-      h("div", { class: "row wrap" },
-        h("label", { class: "grow" }, "슬라이드 폴더", dir),
-        h("label", {}, "슬라이드 수 (없으면 0)", count)),
-      h("p", { class: "muted small" }, "슬라이드는 PPT에서 PNG로 내보낸 그림을 이 폴더에 1.png, 2.png … 이름으로 올립니다. 수업마다 폴더를 나누려면 slides/3반 처럼 적으세요. PowerPoint가 내보낸 이름(슬라이드1.PNG …)을 그대로 쓰려면 slides/슬라이드{n}.PNG 처럼 {n}을 넣으세요."),
+      h("h2", {}, lesson ? (lesson.kind === "survey" ? "설문 설정" : "수업 설정") : "새로 만들기"),
+      lesson ? null : kindPick,
+      lesson ? h("p", { class: "join-code" }, "수업 코드 ", h("strong", {}, lesson.code)) : h("p", { class: "muted small" }, "수업 코드는 겹치지 않게 자동으로 만들어집니다."),
+      h("label", {}, "제목", title),
       msg,
-      h("button", { class: "primary big", type: "submit" }, lesson ? "저장" : "수업 만들기")),
+      h("button", { class: "primary big", type: "submit" }, lesson ? "제목 저장" : "수업 만들기")),
+    lesson && lesson.kind !== "survey" ? slidesCard() : null,
     lesson ? h("section", { class: "card stack" },
       h("h2", {}, "학생 접속"),
       h("p", { class: "join-url" }, joinUrl(lesson)),
@@ -525,10 +564,128 @@ function drawSettings() {
         h("button", { class: "ghost danger", type: "button", onclick: remove }, "수업 지우기"))) : null));
 }
 
+// 슬라이드 올리기: PDF 한 개 또는 그림 여러 장 → 쪽마다 JPG로 바꿔 Storage에 올린다.
+function slidesCard() {
+  const file = h("input", { type: "file", accept: "application/pdf,image/png,image/jpeg", multiple: true });
+  const bar = h("progress", { max: 1, value: 0, hidden: true });
+  const status = h("p", { class: "msg" });
+  const btn = h("button", { class: "primary", type: "button" }, lesson.slide_count ? "다시 올리기 (기존 슬라이드를 바꿈)" : "올리기");
+  btn.addEventListener("click", async () => {
+    if (!file.files.length) { status.textContent = "PDF 파일이나 그림 파일을 먼저 고르세요."; return; }
+    btn.disabled = true;
+    bar.hidden = false;
+    try {
+      const n = await uploadSlides([...file.files], (done, total, what) => {
+        bar.max = total;
+        bar.value = done;
+        status.textContent = what + " " + done + " / " + total;
+      });
+      flash("슬라이드 " + n + "장을 올렸습니다.");
+      await loadLessons(lesson.id);
+    } catch (e) {
+      status.textContent = "올리지 못했습니다: " + (e.message || e);
+      btn.disabled = false;
+    }
+  });
+  const thumbs = h("div", { class: "thumbs" });
+  for (let i = 1; i <= Math.min(lesson.slide_count, 60); i++) thumbs.append(h("img", { src: slideSrc(lesson, i), alt: i + "쪽", loading: "lazy" }));
+  return h("section", { class: "card stack" },
+    h("h2", {}, "슬라이드 " + (lesson.slide_count ? lesson.slide_count + "장" : "없음")),
+    h("p", { class: "muted small" }, "PowerPoint에서 「파일 → 다른 이름으로 저장 → PDF」로 저장한 파일을 올리면 쪽마다 그림으로 바뀝니다. 그림 파일(PNG, JPG) 여러 장을 올려도 됩니다(파일 이름 순서). 100쪽까지."),
+    h("div", { class: "row" }, file, btn), bar, status,
+    lesson.slide_count ? thumbs : null);
+}
+
+async function loadPdfJs() {
+  if (!window.pdfjsLib) {
+    await new Promise((ok, fail) => document.head.append(h("script", { src: "vendor/pdf.min.js", onload: ok, onerror: () => fail(new Error("PDF 도구를 불러오지 못했습니다")) })));
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = "vendor/pdf.worker.min.js";
+  }
+  return window.pdfjsLib;
+}
+
+const SLIDE_WIDTH = 1600;
+
+function canvasToJpeg(canvas) {
+  return new Promise((ok, fail) => canvas.toBlob((b) => (b ? ok(b) : fail(new Error("그림으로 바꾸지 못했습니다"))), "image/jpeg", 0.85));
+}
+
+// 파일들을 쪽별 JPG 묶음으로 바꾼다
+async function toSlideImages(files, progress) {
+  const pdfs = files.filter((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name));
+  if (pdfs.length > 1) throw new Error("PDF는 한 번에 하나만 올릴 수 있습니다.");
+  const out = [];
+  if (pdfs.length) {
+    const lib = await loadPdfJs();
+    const pdf = await lib.getDocument({ data: await pdfs[0].arrayBuffer() }).promise;
+    if (pdf.numPages > 100) throw new Error("100쪽이 넘습니다(" + pdf.numPages + "쪽).");
+    for (let i = 1; i <= pdf.numPages; i++) {
+      progress(i - 1, pdf.numPages, "그림으로 바꾸는 중");
+      const page = await pdf.getPage(i);
+      const vp = page.getViewport({ scale: SLIDE_WIDTH / page.getViewport({ scale: 1 }).width });
+      const canvas = h("canvas", { width: Math.round(vp.width), height: Math.round(vp.height) });
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      out.push(await canvasToJpeg(canvas));
+    }
+    return out;
+  }
+  const imgs = files.filter((f) => /^image\/(png|jpeg)$/.test(f.type)).sort((a, b) => a.name.localeCompare(b.name, "ko", { numeric: true }));
+  if (!imgs.length) throw new Error("PDF나 PNG·JPG 파일을 고르세요.");
+  if (imgs.length > 100) throw new Error("100장이 넘습니다.");
+  for (const [i, f] of imgs.entries()) {
+    progress(i, imgs.length, "그림 줄이는 중");
+    const bmp = await createImageBitmap(f);
+    const scale = Math.min(1, SLIDE_WIDTH / bmp.width);
+    const canvas = h("canvas", { width: Math.round(bmp.width * scale), height: Math.round(bmp.height * scale) });
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    out.push(await canvasToJpeg(canvas));
+  }
+  return out;
+}
+
+const slideFolder = (l) => me.id + "/" + l.id + "/";
+
+async function uploadSlides(files, progress) {
+  const images = await toSlideImages(files, progress);
+  const folder = slideFolder(lesson);
+  for (const [i, blob] of images.entries()) {
+    progress(i, images.length, "올리는 중");
+    const { error } = await sb.storage.from("slides").upload(folder + (i + 1) + ".jpg", blob, { upsert: true, contentType: "image/jpeg", cacheControl: "3600" });
+    if (error) throw error;
+  }
+  progress(images.length, images.length, "올리는 중");
+  // 전보다 쪽 수가 줄었으면 남은 그림을 지운다
+  const { data: old } = await sb.storage.from("slides").list(folder.replace(/\/$/, ""), { limit: 1000 });
+  const extra = (old || []).map((o) => o.name).filter((n) => parseInt(n, 10) > images.length).map((n) => folder + n);
+  if (extra.length) await sb.storage.from("slides").remove(extra);
+  const dir = SB_URL + "/storage/v1/object/public/slides/" + folder + "{n}.jpg?v=" + Date.now();
+  const { error } = await sb.from("lessons").update({ slide_dir: dir, slide_count: images.length, page: 1 }).eq("id", lesson.id);
+  if (error) throw error;
+  return images.length;
+}
+
+// 수업을 지울 때 그 수업의 슬라이드 그림도 지운다(복제한 다른 수업이 같은 그림을 쓰면 남긴다)
+async function removeSlideFiles(l) {
+  if (!l.slide_count || !l.slide_dir.includes("/" + l.id + "/")) return;
+  if (lessons.some((x) => x.id !== l.id && x.slide_dir.split("?")[0] === l.slide_dir.split("?")[0])) return;
+  // 그림을 올린 교사의 폴더(교사가 여러 명일 수 있으므로 주소에서 읽는다)
+  const m = /\/public\/slides\/(.+\/)\{n\}/.exec(l.slide_dir);
+  if (!m) return;
+  const folder = decodeURIComponent(m[1]);
+  const { data } = await sb.storage.from("slides").list(folder.replace(/\/$/, ""), { limit: 1000 });
+  if (data && data.length) await sb.storage.from("slides").remove(data.map((o) => folder + o.name));
+}
+
 // ---------- CSV ----------
 function downloadCSV(acts, fileName) {
   const cell = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
-  const head = ["반·번호", "이름"];
+  const head = ["학번", "이름"];
   acts.forEach((a) => {
     if (a.kind === "quiz") head.push(a.title + " · 점수");
     a.questions.forEach((q, i) => head.push(a.title + " · " + (i + 1) + ". " + q.text));

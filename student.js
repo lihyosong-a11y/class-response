@@ -1,4 +1,4 @@
-// 학생 화면: 입장(반·번호 + 이름 + 비밀번호) → 슬라이드를 따라가며 질문에 답한다.
+// 학생 화면: 입장(학번 + 이름 + 비밀번호) → 슬라이드를 따라가며 질문에 답한다.
 // 3초마다 서버에서 수업 상태를 받아 온다(교사가 넘긴 쪽, 제출 열림, 공개된 응답).
 
 const app = document.getElementById("app");
@@ -32,8 +32,8 @@ function showEntry(notice) {
   shell = null;
   cards.clear();
   const fromLink = !!params.get("c");
-  const codeIn = h("input", { type: "text", value: code, autocomplete: "off", maxlength: 20, required: true });
-  const noIn = h("input", { type: "text", autocomplete: "off", maxlength: 20, placeholder: "예: 3-15", required: true });
+  const codeIn = h("input", { type: "text", value: code, autocomplete: "off", maxlength: 20, placeholder: "예: K7P2Q", autocapitalize: "characters", required: true });
+  const noIn = h("input", { type: "text", autocomplete: "off", maxlength: 20, inputmode: "numeric", placeholder: "예: 20243030", required: true });
   const nameIn = h("input", { type: "text", autocomplete: "off", maxlength: 20, required: true });
   const pinIn = h("input", { type: "password", inputmode: "numeric", maxlength: 4, autocomplete: "off", required: true });
   const pin2In = h("input", { type: "password", inputmode: "numeric", maxlength: 4, autocomplete: "off" });
@@ -64,7 +64,7 @@ function showEntry(notice) {
       if (error) { msg.textContent = "연결하지 못했습니다. 인터넷을 확인하고 다시 시도하세요. (" + error.message + ")"; return; }
       const err = data.error;
       if (err === "no_lesson") msg.textContent = "수업 코드를 찾지 못했습니다. 선생님께 받은 코드를 확인하세요.";
-      else if (err === "bad_name") msg.textContent = "반·번호와 이름을 확인하세요(각각 20자까지).";
+      else if (err === "bad_name") msg.textContent = "학번과 이름을 확인하세요(각각 20자까지).";
       else if (err === "bad_pin") msg.textContent = "비밀번호는 숫자 4자리로 입력하세요.";
       else if (err === "need_confirm") {
         confirming = true;
@@ -87,7 +87,7 @@ function showEntry(notice) {
     },
   },
     fromLink ? null : h("label", {}, "수업 코드", codeIn),
-    h("label", {}, "반·번호", noIn),
+    h("label", {}, "학번", noIn),
     h("label", {}, "이름", nameIn),
     h("label", {}, "비밀번호 (숫자 4자리)", pinIn),
     pin2Row,
@@ -153,7 +153,7 @@ function clampPage(n) {
 
 // ---------- 화면 ----------
 function buildShell() {
-  const img = h("img", { class: "slide", alt: "" });
+  const img = h("img", { class: "slide", alt: "", title: "누르면 크게 보기", onclick: zoom });
   const prev = h("button", { class: "ghost", type: "button", onclick() { go(viewing - 1); } }, "◀ 이전");
   const next = h("button", { class: "ghost", type: "button", onclick() { go(viewing + 1); } }, "다음 ▶");
   const where = h("span", { class: "where" });
@@ -163,16 +163,37 @@ function buildShell() {
   const title = h("strong", {});
   const who = h("span", {});
   const slideBox = h("div", { class: "slide-box" }, img,
-    h("nav", { class: "pager" }, prev, where, next, back),
+    h("nav", { class: "pager" }, prev, where, next, back, h("span", { class: "spacer" }),
+      h("button", { class: "ghost", type: "button", onclick: zoom }, "크게 보기")),
     h("p", { class: "muted small" }, "다음 쪽은 선생님이 넘기면 자동으로 열립니다."));
   const list = h("div", { class: "stack" });
   app.replaceChildren(
     h("header", { class: "top" }, h("div", { class: "top-title" }, title, who),
       h("button", { class: "link", type: "button", onclick() { logout("나갔습니다. 다시 들어오려면 입장하세요."); } }, "나가기")),
-    h("main", { class: "narrow stack" }, conn, closed, slideBox, list));
+    h("main", { class: "lesson" }, conn, closed, slideBox, list));
   const anytimeHead = h("h2", { class: "section-head" }, "언제든 할 수 있는 활동");
   const empty = h("p", { class: "muted center" });
   shell = { img, prev, next, where, back, closed, conn, title, who, slideBox, list, anytimeHead, empty };
+}
+
+// 슬라이드를 화면 가득 띄운다. 누르거나 Esc로 닫는다. 선생님이 쪽을 넘기면 띄운 그림도 바뀐다.
+function zoom() {
+  if (shell.zoom) return;
+  const big = h("img", { src: shell.img.src, alt: shell.img.alt });
+  const box = h("div", { class: "slide-zoom", onclick: close }, big, h("p", {}, "눌러서 닫기 · 휴대폰은 가로로 돌리면 더 크게 보입니다"));
+  function close() {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    box.remove();
+    document.removeEventListener("keydown", esc);
+    document.removeEventListener("fullscreenchange", left);
+    shell.zoom = null;
+  }
+  const esc = (e) => { if (e.key === "Escape") close(); };
+  const left = () => { if (!document.fullscreenElement) close(); };
+  document.addEventListener("keydown", esc);
+  document.body.append(box);
+  shell.zoom = big;
+  if (box.requestFullscreen) box.requestFullscreen().then(() => document.addEventListener("fullscreenchange", left)).catch(() => {});
 }
 
 function go(n) {
@@ -192,6 +213,7 @@ function render(pageChanged) {
   if (hasSlides) {
     const src = slideSrc(L, viewing);
     if (shell.img.getAttribute("src") !== src) shell.img.src = src;
+    if (shell.zoom && shell.zoom.getAttribute("src") !== src) shell.zoom.src = src;
     shell.img.alt = "슬라이드 " + viewing;
     shell.where.textContent = viewing + " / " + L.slide_count;
     shell.prev.disabled = viewing <= 1;
@@ -201,8 +223,10 @@ function render(pageChanged) {
 
   // 슬라이드가 없는 수업은 활동을 모두 보여 준다
   const acts = state.activities;
-  const here = hasSlides ? acts.filter((a) => a.page === viewing) : acts.filter((a) => a.page != null);
-  const anytime = acts.filter((a) => a.page == null);
+  // 큰 화면에서는 슬라이드와 질문을 나란히(split), 슬라이드가 없으면 가운데 한 줄(single)
+  shell.slideBox.parentNode.className = "lesson " + (hasSlides ? "split" : "single");
+  const here = hasSlides ? acts.filter((a) => a.page === viewing) : acts;
+  const anytime = hasSlides ? acts.filter((a) => a.page == null) : [];
   const els = here.map(cardFor);
   if (anytime.length) els.push(shell.anytimeHead, anytime.map(cardFor));
   if (!here.length && !anytime.length) {

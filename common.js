@@ -1,7 +1,10 @@
 // 학생 화면과 교사 화면이 함께 쓰는 것들
 
-const configured = /^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(SUPABASE_URL) || /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(SUPABASE_URL);
-const sb = configured ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+// 주소 끝에 /rest/v1/ 같은 꼬리나 빈칸이 붙어 있어도 프로젝트 주소만 쓴다
+const SB_URL = String(SUPABASE_URL).trim().replace(/\/(rest|auth|storage)\/v1.*$/, "").replace(/\/+$/, "");
+const configured = (/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(SB_URL) || /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(SB_URL))
+  && !/여기에/.test(SUPABASE_KEY) && String(SUPABASE_KEY).trim() !== "";
+const sb = configured ? supabase.createClient(SB_URL, String(SUPABASE_KEY).trim()) : null;
 
 const KIND_NAME = { slide: "슬라이드 질문", survey: "설문", quiz: "퀴즈" };
 const TYPE_NAME = { choice: "하나 고르기", multi: "여러 개 고르기", short: "짧은 글", long: "긴 글" };
@@ -84,5 +87,7 @@ function openModal(title, body) {
 function notConfigured(app) {
   app.replaceChildren(h("main", { class: "narrow" }, h("section", { class: "card" },
     h("h1", {}, "아직 연결되지 않았습니다"),
-    h("p", {}, "config.js 파일에 Supabase 주소(SUPABASE_URL)와 publishable 키(SUPABASE_KEY)를 넣어 주세요. 방법은 README.md에 있습니다."))));
+    h("p", {}, "config.js 파일에 Supabase 주소(SUPABASE_URL)와 publishable 키(SUPABASE_KEY)를 넣어 주세요. 방법은 README.md에 있습니다."),
+    h("p", { class: "muted small" }, "지금 읽은 주소: " + SUPABASE_URL),
+    h("p", { class: "muted small" }, "주소는 https://(영문 소문자·숫자).supabase.co 모양이어야 합니다. 고친 뒤 GitHub에 다시 올렸다면 1~2분 뒤 Ctrl+F5로 새로고침하세요."))));
 }
