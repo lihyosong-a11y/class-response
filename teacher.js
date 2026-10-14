@@ -120,7 +120,11 @@ function fatal(error) {
 async function save(table, row, id) {
   const q = id ? sb.from(table).update(row).eq("id", id) : sb.from(table).insert(row);
   const { data, error } = await q.select();
-  if (error) { alert("저장하지 못했습니다: " + error.message); return null; }
+  if (error) {
+    alert("저장하지 못했습니다: " + error.message +
+      (/page_to/.test(error.message) ? " · 여러 쪽에 걸친 질문을 쓰려면 Supabase SQL Editor에서 setup.sql을 한 번 실행하세요. 끝 쪽 칸을 비우면 지금도 저장됩니다." : ""));
+    return null;
+  }
   return data[0];
 }
 
@@ -450,7 +454,13 @@ function editor() {
     const row = { kind: e.kind, title: e.title, page: e.page, show_answer: e.show_answer, named: e.named, questions: e.questions };
     // 끝 쪽: 시작 쪽보다 뒤일 때만 쓴다. (page_to 칸이 없는 예전 데이터베이스에서도 한 쪽짜리는 저장되도록 필요할 때만 보낸다)
     const to = e.page != null && e.page_to > e.page ? Math.min(e.page_to, Math.max(lesson.slide_count, e.page)) : null;
-    if (to != null || "page_to" in e) row.page_to = to;
+    // 데이터베이스에 page_to 칸이 있을 때만(불러온 활동에 그 칸이 보일 때만) 보낸다
+    const hasPageTo = activities.some((x) => "page_to" in x);
+    if (to != null && activities.length && !hasPageTo) {
+      msg.textContent = "여러 쪽에 걸친 질문을 쓰려면 먼저 Supabase에서 setup.sql을 한 번 실행해야 합니다. 끝 쪽 칸을 비우면 지금도 저장할 수 있습니다.";
+      return;
+    }
+    if (to != null || hasPageTo) row.page_to = to;
     if (!e.id) { row.lesson_id = lesson.id; row.sort = activities.length; }
     const saved = await save("activities", row, e.id);
     if (!saved) return;
@@ -650,6 +660,9 @@ function slidesCard() {
     h("h2", {}, "슬라이드 " + (lesson.slide_count ? lesson.slide_count + "장" : "없음")),
     h("p", { class: "muted small" }, "PowerPoint에서 「파일 → 다른 이름으로 저장 → PDF」로 저장한 파일을 올리면 쪽마다 그림으로 바뀝니다. 그림 파일(PNG, JPG) 여러 장을 올려도 됩니다(파일 이름 순서). 100쪽까지."),
     h("div", { class: "row" }, file, btn), bar, status,
+    lesson.slide_count ? h("div", { class: "row slide-tools" },
+      h("span", { class: "muted small grow" }, "미리보기에 빈 칸이 있거나 쪽 수가 맞지 않으면 →"),
+      h("button", { class: "ghost", type: "button", onclick() { deleteSlide(null, status); } }, "번호 다시 맞추기")) : null,
     lesson.slide_count ? thumbs : null);
 }
 
@@ -716,47 +729,72 @@ function slideFolderOf(l) {
 
 // 슬라이드 한 쪽 지우기: 그 쪽 그림을 지우고 뒤쪽 그림을 한 칸씩 앞으로 당긴다.
 // 질문의 쪽 번호도 함께 당긴다(지운 쪽에 붙어 있던 질문은 그 자리로 당겨진 다음 슬라이드에 붙는다).
+// 저장소에 실제로 있는 그림 목록을 보고 1, 2, 3 … 으로 다시 번호를 매기므로, 중간에 멈춰 꼬인 상태도 바로잡는다.
+// k 가 없으면(번호 다시 맞추기) 아무것도 지우지 않고 번호만 맞춘다.
+let slideBusy = false;
+
 async function deleteSlide(k, status) {
-  const n = lesson.slide_count;
+  if (slideBusy) return;
   const folder = slideFolderOf(lesson);
   if (!folder) return alert("이 수업의 슬라이드 위치를 알 수 없습니다. 슬라이드를 다시 올려 주세요.");
   const base = lesson.slide_dir.split("?")[0];
   if (folder !== slideFolder(lesson) || lessons.some((x) => x.id !== lesson.id && (x.slide_dir || "").split("?")[0] === base)) {
     return alert("이 슬라이드는 복제한 다른 수업과 함께 쓰고 있어서 한 쪽만 지울 수 없습니다.\n이 수업에서 PDF를 「다시 올리기」하면 이 수업만의 슬라이드가 됩니다.");
   }
-  const onIt = activities.filter((a) => a.page === k && !(a.page_to > k));
-  if (!confirm(k + "쪽 슬라이드를 지울까요? 뒤쪽 슬라이드가 한 칸씩 앞으로 당겨집니다." +
-    (onIt.length ? "\n이 쪽에만 있던 질문 " + onIt.length + "개는 지우지 않고, 그 자리로 당겨지는 다음 슬라이드에 붙습니다." : ""))) return;
+  if (k) {
+    const onIt = activities.filter((a) => a.page === k && !(a.page_to > k));
+    if (!confirm(k + "쪽 슬라이드를 지울까요? 뒤쪽 슬라이드가 한 칸씩 앞으로 당겨집니다." +
+      (onIt.length ? "\n이 쪽에만 있던 질문 " + onIt.length + "개는 지우지 않고, 그 자리로 당겨지는 다음 슬라이드에 붙습니다." : ""))) return;
+  }
+  slideBusy = true;
+  document.querySelectorAll(".thumb button, .slide-tools button").forEach((b) => { b.disabled = true; });
   const st = sb.storage.from("slides");
-  status.textContent = k + "쪽을 지우는 중…";
   try {
-    let r = await st.remove([folder + k + ".jpg"]);
-    if (r.error) throw r.error;
-    for (let i = k + 1; i <= n; i++) {
-      status.textContent = "뒤쪽 슬라이드를 당기는 중 " + i + " / " + n;
-      r = await st.move(folder + i + ".jpg", folder + (i - 1) + ".jpg");
+    status.textContent = "슬라이드 목록을 확인하는 중…";
+    const listed = await st.list(folder.replace(/\/$/, ""), { limit: 1000 });
+    if (listed.error) throw listed.error;
+    let nums = (listed.data || []).map((o) => /^(\d+)\.jpg$/.exec(o.name)).filter(Boolean).map((m) => +m[1]).sort((x, y) => x - y);
+    if (k) {
+      if (!nums.includes(k)) throw new Error(k + "쪽 그림이 이미 없습니다. 「번호 다시 맞추기」를 눌러 주세요.");
+      status.textContent = k + "쪽을 지우는 중…";
+      const r = await st.remove([folder + k + ".jpg"]);
+      if (r.error) throw r.error;
+      nums = nums.filter((x) => x !== k);
+    }
+    // 남은 그림을 1, 2, 3 … 으로 당긴다(작은 번호부터 옮기므로 옮길 자리는 늘 비어 있다)
+    for (const [i, num] of nums.entries()) {
+      if (num === i + 1) continue;
+      status.textContent = "슬라이드 번호를 맞추는 중 " + (i + 1) + " / " + nums.length;
+      const r = await st.move(folder + num + ".jpg", folder + (i + 1) + ".jpg");
       if (r.error) throw r.error;
     }
-    const left = n - 1;
-    const shift = (p) => (p == null ? p : p > k ? p - 1 : p);
-    for (const a of activities) {
-      if (a.page == null) continue;
-      let page = Math.min(shift(a.page), Math.max(left, 1));
-      let to = a.page_to > a.page ? Math.min(shift(a.page_to), Math.max(left, 1)) : a.page_to ?? null;
-      if (to != null && to <= page) to = null;
-      if (page === a.page && to === (a.page_to ?? null)) continue;
-      const change = { page };
-      if ("page_to" in a) change.page_to = to;
-      const u = await sb.from("activities").update(change).eq("id", a.id);
-      if (u.error) throw u.error;
+    const left = nums.length;
+    if (k) {
+      const shift = (pg) => (pg == null ? pg : pg > k ? pg - 1 : pg);
+      for (const a of activities) {
+        if (a.page == null) continue;
+        const page = Math.min(shift(a.page), Math.max(left, 1));
+        let to = a.page_to > a.page ? Math.min(shift(a.page_to), Math.max(left, 1)) : a.page_to ?? null;
+        if (to != null && to <= page) to = null;
+        if (page === a.page && to === (a.page_to ?? null)) continue;
+        const change = { page };
+        if ("page_to" in a) change.page_to = to;
+        const u = await sb.from("activities").update(change).eq("id", a.id);
+        if (u.error) throw u.error;
+      }
     }
+    const pageNow = k && lesson.page > k ? lesson.page - 1 : lesson.page;
     const dir = base + "?v=" + Date.now();   // 이름이 바뀐 그림을 브라우저가 예전 것으로 보이지 않게
-    const u = await sb.from("lessons").update({ slide_dir: left ? dir : "", slide_count: left, page: Math.min(Math.max(shift(lesson.page), 1), Math.max(left, 1)) }).eq("id", lesson.id);
+    const u = await sb.from("lessons").update({ slide_dir: left ? dir : "", slide_count: left, page: Math.min(Math.max(pageNow, 1), Math.max(left, 1)) }).eq("id", lesson.id);
     if (u.error) throw u.error;
-    flash(k + "쪽을 지웠습니다.");
+    flash(k ? k + "쪽을 지웠습니다." : "슬라이드 번호를 맞췄습니다 (" + left + "장).");
+    slideBusy = false;
     await loadLessons(lesson.id);
   } catch (e) {
-    status.textContent = "지우는 중에 멈췄습니다: " + (e.message || e) + " · 남은 슬라이드를 확인하고, 이상하면 PDF를 다시 올려 주세요.";
+    slideBusy = false;
+    document.querySelectorAll(".thumb button, .slide-tools button").forEach((b) => { b.disabled = false; });
+    status.textContent = "멈췄습니다: " + (e.message || e) + " · 「번호 다시 맞추기」를 누르면 남은 그림으로 번호를 다시 맞춥니다.";
+    alert(status.textContent);
   }
 }
 
