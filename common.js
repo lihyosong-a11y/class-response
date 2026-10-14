@@ -82,6 +82,14 @@ function activityDescription(activity) {
     [...new Set(questions.map((q) => q.description).filter(Boolean))].join("\n\n");
 }
 
+function isInfoActivity(activity) {
+  return activity.kind === "survey" && activity.questions?.length === 1 && activity.questions[0].type === "info";
+}
+
+function activityName(activity) {
+  return isInfoActivity(activity) ? "설명 카드" : KIND_NAME[activity.kind];
+}
+
 // 응답 모아 보기: 고르는 질문은 막대, 글은 목록. docs = [{ name, answers }]
 function summaryView(questions, docs, opts) {
   opts = opts || {};

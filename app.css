@@ -175,7 +175,7 @@ main.lesson .slide { cursor: zoom-in; }
 .build { display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: flex-start; }
 .build > aside { flex: 1 1 280px; min-width: 0; }
 .build > .card { flex: 999 1 560px; min-width: 0; }
-.kinds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }
+.kinds { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: .4rem; }
 .kind { display: grid; gap: .1rem; padding: .6rem .4rem; min-height: 64px; background: #fff; border: 1px solid var(--field); text-align: center; }
 .kind span { font-size: .78rem; color: var(--muted); }
 .kind:hover { border-color: var(--accent); }

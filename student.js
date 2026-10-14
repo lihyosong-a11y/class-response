@@ -271,6 +271,13 @@ function cardFor(a) {
 
 function buildForm(c) {
   const a = c.a;
+  if (isInfoActivity(a)) {
+    c.refresh = () => {};
+    c.form.replaceChildren(
+      h("div", { class: "card-head" }, h("h2", {}, a.title), h("span", { class: "badge" }, "설명 카드")),
+      linkedDescription(a.questions[0].text));
+    return;
+  }
   const quizDone = a.kind === "quiz" && !!a.mine;
   // 고치는 중인 내용(이 기기에 저장). 서버에 더 나중에 저장된 것이 있으면 그것을 쓴다.
   let draft = null;

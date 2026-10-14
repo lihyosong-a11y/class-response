@@ -236,6 +236,12 @@ function drawRoster(shown) {
 }
 
 function runBlock(a) {
+  if (isInfoActivity(a)) return h("section", { class: "card stack" },
+    h("div", { class: "row between" },
+      h("div", {}, h("p", { class: "muted small" }, "설명 카드 · " + whereText(a)), h("h2", {}, a.title)),
+      h("button", { type: "button", class: a.shared ? "ghost" : "primary", async onclick() { await setActivity(a, { shared: !a.shared }); } }, a.shared ? "공개 끝내기" : "학생에게 공개")),
+    h("p", { class: a.shared ? "pill on" : "pill" }, a.shared ? "학생에게 공개 중" : "학생에게는 보이지 않음"),
+    linkedDescription(a.questions[0].text));
   const docs = docsOf(a);
   const scored = docs.filter((d) => d.r.total);
   const avg = scored.length ? (scored.reduce((s, d) => s + d.r.score / d.r.total, 0) / scored.length * 100).toFixed(0) + "점" : null;
@@ -314,7 +320,7 @@ function drawBuild() {
   const list = h("div", { class: "stack" }, activities.length ? activities.map((a) => h("button", {
     type: "button", class: "act-item" + (editing && editing.id === a.id ? " on" : ""),
     onclick() { editing = JSON.parse(JSON.stringify(a)); drawBuild(); },
-  }, h("span", { class: "muted small" }, KIND_NAME[a.kind] + " · " + whereText(a)), h("span", {}, a.title))) : h("p", { class: "muted small" }, "아직 활동이 없습니다."));
+  }, h("span", { class: "muted small" }, activityName(a) + " · " + whereText(a)), h("span", {}, a.title))) : h("p", { class: "muted small" }, "아직 활동이 없습니다."));
   const kindList = lesson.kind === "survey" ? { survey: "정답 없는 설문", quiz: "정답·자동 채점" } : { slide: "쪽 아래에 붙는 질문", survey: "정답 없는 설문", quiz: "정답·자동 채점" };
   const kinds = h("div", { class: "kinds" }, Object.entries(kindList).map(([k, sub]) =>
     h("button", {
@@ -323,7 +329,12 @@ function drawBuild() {
         editing = { kind: k, title: "", page: lesson.slide_count ? lesson.page : null, show_answer: true, named: false, shared: false, questions: [newQuestion(k === "survey" ? "long" : "choice")] };
         drawBuild();
       },
-    }, h("strong", {}, KIND_NAME[k]), h("span", {}, sub))));
+    }, h("strong", {}, KIND_NAME[k]), h("span", {}, sub))),
+    h("button", { type: "button", class: "kind", onclick() {
+      editing = { kind: "survey", title: "", page: lesson.slide_count ? lesson.page : null, show_answer: false, named: false, shared: false,
+        questions: [{ id: newId(), type: "info", text: "" }] };
+      drawBuild();
+    } }, h("strong", {}, "설명 카드"), h("span", {}, "글과 외부 링크만 표시")));
   main.replaceChildren(h("div", { class: "build" },
     h("aside", { class: "stack" },
       h("section", { class: "card stack" }, h("h2", {}, "새로 만들기"), kinds),
@@ -333,6 +344,34 @@ function drawBuild() {
 
 function editor() {
   const e = editing;
+  if (isInfoActivity(e)) {
+    const msg = h("p", { class: "error" });
+    const title = h("input", { type: "text", maxlength: 100, value: e.title, placeholder: "예: 활동 안내", oninput() { e.title = title.value; } });
+    const body = h("textarea", { rows: 10, maxlength: 5000, placeholder: "설명과 링크를 입력하세요. https:// 주소는 학생 화면에서 클릭할 수 있습니다.", oninput() { e.questions[0].text = body.value; } }, e.questions[0].text || "");
+    return h("section", { class: "card stack editor" },
+      h("h2", {}, e.id ? "설명 카드 고치기" : "설명 카드 만들기"),
+      h("label", {}, "제목", title), h("label", {}, "설명문", body),
+      h("p", { class: "muted small" }, "학생은 이 카드에 답을 입력하지 않습니다."), msg,
+      h("div", { class: "row between" },
+        e.id ? h("button", { class: "ghost danger", type: "button", async onclick() {
+          if (!confirm("설명 카드를 지울까요?")) return;
+          const { error } = await sb.from("activities").delete().eq("id", e.id);
+          if (error) { msg.textContent = error.message; return; }
+          activities = activities.filter((a) => a.id !== e.id); editing = null; drawBuild();
+        } }, "카드 지우기") : h("span", {}),
+        h("div", { class: "row" },
+          h("button", { class: "ghost", type: "button", onclick() { editing = null; drawBuild(); } }, "닫기"),
+          h("button", { class: "primary", type: "button", async onclick() {
+            e.title = e.title.trim(); e.questions[0].text = e.questions[0].text.trim();
+            if (!e.title || !e.questions[0].text) { msg.textContent = "제목과 설명문을 입력하세요."; return; }
+            const row = { kind: "survey", title: e.title, page: e.page, show_answer: false, named: false, questions: e.questions };
+            if (!e.id) { row.lesson_id = lesson.id; row.sort = activities.length; }
+            const saved = await save("activities", row, e.id);
+            if (!saved) return;
+            const { data } = await sb.from("activities").select("*").eq("lesson_id", lesson.id);
+            activities = sortActivities(data || []); editing = JSON.parse(JSON.stringify(saved)); drawBuild(); flash("저장했습니다.");
+          } }, "저장"))));
+  }
   if (e.description === undefined) e.description = activityDescription(e);
   const hasResponses = e.id && responses.some((r) => r.activity_id === e.id);
   const msg = h("p", { class: "error" });
