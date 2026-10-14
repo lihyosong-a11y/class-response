@@ -225,7 +225,7 @@ function render(pageChanged) {
   const acts = state.activities;
   // 큰 화면에서는 슬라이드와 질문을 나란히(split), 슬라이드가 없으면 가운데 한 줄(single)
   shell.slideBox.parentNode.className = "lesson " + (hasSlides ? "split" : "single");
-  const here = hasSlides ? acts.filter((a) => a.page === viewing) : acts;
+  const here = hasSlides ? acts.filter((a) => onPage(a, viewing)) : acts;
   const anytime = hasSlides ? acts.filter((a) => a.page == null) : [];
   const els = here.map(cardFor);
   if (anytime.length) els.push(shell.anytimeHead, anytime.map(cardFor));
