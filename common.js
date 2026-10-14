@@ -9,7 +9,7 @@ const sb = configured ? supabase.createClient(SB_URL, String(SUPABASE_KEY).trim(
 // 만든 사람 표시. 고쳐 쓰거나 나눌 때도 지우지 말아 주세요(LICENSE.md).
 const CREDIT = { name: "이효송", year: 2026 };
 
-const KIND_NAME = { slide: "슬라이드 질문", survey: "설문", quiz: "퀴즈" };
+const KIND_NAME = { slide: "슬라이드 질문", survey: "설문", quiz: "퀴즈", sim: "시뮬레이션" };
 const TYPE_NAME = { choice: "하나 고르기", multi: "여러 개 고르기", short: "짧은 글", long: "긴 글" };
 
 // 화면 요소 만들기. 학생이 쓴 글은 늘 글자(텍스트)로만 넣는다(innerHTML을 쓰지 않음).
@@ -34,6 +34,26 @@ function h(tag, attrs, ...kids) {
 // 활동이 이 쪽에 보이는지. page부터 page_to까지(page_to가 없으면 page 한 쪽)
 function onPage(a, n) {
   return a.page != null && a.page <= n && n <= Math.max(a.page_to ?? a.page, a.page);
+}
+
+// 시뮬레이션(html) 칸. sandbox 로 격리해서 이 웹앱의 로그인 정보나 저장소에 손대지 못하게 한다.
+function simFrame(html, title) {
+  const f = h("iframe", { class: "sim-frame", title: title || "시뮬레이션", loading: "lazy" });
+  f.setAttribute("sandbox", "allow-scripts allow-forms allow-modals allow-pointer-lock allow-downloads");
+  if (html != null) f.srcdoc = html;
+  return f;
+}
+
+// 시뮬레이션을 화면 가득 띄운다. 닫기 버튼이나 Esc로 닫는다.
+function openSimFull(title, html) {
+  const close = () => { box.remove(); document.removeEventListener("keydown", esc); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); };
+  const esc = (e) => { if (e.key === "Escape") close(); };
+  const box = h("div", { class: "sim-full" },
+    h("div", { class: "sim-full-head" }, h("strong", {}, title || "시뮬레이션"), h("button", { class: "ghost", type: "button", onclick: close }, "닫기")),
+    simFrame(html, title));
+  document.addEventListener("keydown", esc);
+  document.body.append(box);
+  if (box.requestFullscreen) box.requestFullscreen().catch(() => {});
 }
 
 function slideSrc(lesson, n) {

@@ -174,7 +174,8 @@ function drawRun() {
   const next = h("button", { class: "primary", type: "button", onclick() { setPage(lesson.page + 1); } }, "다음 ▶");
   const openBtn = h("button", { type: "button", onclick() { setLesson({ open: !lesson.open }); } });
   const openText = h("span", {});
-  const stage = h("div", { class: "stage" }, img);
+  const simStage = h("div", { class: "sim-stage", hidden: true });
+  const stage = h("div", { class: "stage" }, img, simStage);
   const panel = h("div", { class: "stack" });
   const roster = h("section", { class: "card stack" });
   const hasSlides = lesson.slide_count > 0;
@@ -191,7 +192,7 @@ function drawRun() {
       h("section", { class: "card row between" }, openText, openBtn),
       roster,
       panel)));
-  run = { img, where, prev, next, openBtn, openText, panel, roster, blocks: new Map() };
+  run = { img, simStage, simKey: "", where, prev, next, openBtn, openText, panel, roster, blocks: new Map() };
   refreshRun();
 }
 
@@ -212,7 +213,16 @@ function refreshRun() {
   run.openBtn.textContent = L.open ? "제출 마감" : "제출 열기";
 
   const shown = activities.filter((a) => L.slide_count === 0 || onPage(a, L.page) || a.page == null);
-  drawRoster(shown);
+  // 「슬라이드 자리에 띄우기」 시뮬레이션: 교사 화면에서도 슬라이드 대신 띄운다(다시 그릴 때마다 새로 띄우지 않게 key로 확인)
+  const stageSim = L.slide_count > 0 ? shown.find((a) => a.kind === "sim" && a.sim_full && onPage(a, L.page)) : null;
+  const simKey = stageSim ? stageSim.id + ":" + (stageSim.html || "").length + ":" + stageSim.title : "";
+  run.img.hidden = !!stageSim;
+  run.simStage.hidden = !stageSim;
+  if (simKey !== run.simKey) {
+    run.simKey = simKey;
+    run.simStage.replaceChildren(...(stageSim ? [simFrame(stageSim.html, stageSim.title)] : []));
+  }
+  drawRoster(shown.filter((a) => a.kind !== "sim"));
   run.panel.replaceChildren(...(shown.length ? shown.map(runBlock)
     : [h("p", { class: "card muted" }, L.page + "쪽에는 활동이 없습니다. 「질문·설문 만들기」에서 추가하세요.")]));
 }
@@ -241,6 +251,11 @@ function drawRoster(shown) {
 }
 
 function runBlock(a) {
+  if (a.kind === "sim") return h("section", { class: "card stack" },
+    h("div", { class: "row between" },
+      h("div", {}, h("p", { class: "muted small" }, "시뮬레이션 · " + whereText(a)), h("h2", {}, a.title)),
+      h("button", { class: "primary", type: "button", onclick() { openSimFull(a.title, a.html); } }, "크게 실행")),
+    h("p", { class: "pill" }, a.sim_full && lesson.slide_count ? "학생 화면: 슬라이드 자리에 크게 보임" : "학생 화면: 슬라이드 아래 카드로 보임"));
   if (isInfoActivity(a)) return h("section", { class: "card stack" },
     h("div", { class: "row between" },
       h("div", {}, h("p", { class: "muted small" }, "설명 카드 · " + whereText(a)), h("h2", {}, a.title)),
@@ -339,7 +354,11 @@ function drawBuild() {
       editing = { kind: "survey", title: "", page: lesson.slide_count ? lesson.page : null, show_answer: false, named: false, shared: false,
         questions: [{ id: newId(), type: "info", text: "" }] };
       drawBuild();
-    } }, h("strong", {}, "설명 카드"), h("span", {}, "글과 외부 링크만 표시")));
+    } }, h("strong", {}, "설명 카드"), h("span", {}, "글과 외부 링크만 표시")),
+    h("button", { type: "button", class: "kind", onclick() {
+      editing = { kind: "sim", title: "", page: lesson.slide_count ? lesson.page : null, sim_full: lesson.slide_count > 0, html: "", questions: [] };
+      drawBuild();
+    } }, h("strong", {}, "시뮬레이션"), h("span", {}, "html 파일을 슬라이드 사이에")));
   main.replaceChildren(h("div", { class: "build" },
     h("aside", { class: "stack" },
       h("section", { class: "card stack" }, h("h2", {}, "새로 만들기"), kinds),
@@ -347,8 +366,70 @@ function drawBuild() {
     editing ? editor() : h("section", { class: "card muted" }, "왼쪽에서 새로 만들거나, 고칠 활동을 고르세요.")));
 }
 
+function simEditor() {
+  const e = editing;
+  const msg = h("p", { class: "error" });
+  const title = h("input", { type: "text", maxlength: 100, value: e.title, placeholder: "예: 열의 전도 시뮬레이션", oninput() { e.title = title.value; } });
+  const code = h("textarea", { rows: 8, class: "mono", spellcheck: "false", placeholder: "<!DOCTYPE html> 로 시작하는 코드를 통째로 붙여넣거나, 위에서 html 파일을 고르세요.", oninput() { e.html = code.value; size.textContent = sizeText(); } }, e.html || "");
+  const sizeText = () => (e.html ? (e.html.length / 1000).toFixed(0) + "천 자 / 최대 500천 자" : "");
+  const size = h("span", { class: "muted small" }, sizeText());
+  const file = h("input", { type: "file", accept: ".html,.htm,text/html", async onchange() {
+    const f = file.files[0];
+    if (!f) return;
+    if (f.size > 2000000) { msg.textContent = "파일이 너무 큽니다. html 파일 하나로 된 시뮬레이션만 올릴 수 있습니다."; return; }
+    e.html = await f.text();
+    code.value = e.html;
+    size.textContent = sizeText();
+    if (!e.title.trim()) { e.title = f.name.replace(/\.html?$/i, ""); title.value = e.title; }
+    msg.textContent = "";
+  } });
+  const pageIn = h("input", { type: "number", min: 1, max: Math.max(lesson.slide_count, 1), value: e.page ?? lesson.page, class: "num", "aria-label": "시작 쪽", oninput() { e.page = parseInt(pageIn.value, 10) || 1; } });
+  const pageToIn = h("input", { type: "number", min: 1, max: Math.max(lesson.slide_count, 1), value: e.page_to > e.page ? e.page_to : "", placeholder: "(한 쪽만)", class: "num", "aria-label": "끝 쪽", oninput() { e.page_to = parseInt(pageToIn.value, 10) || null; } });
+  async function saveSim() {
+    e.title = e.title.trim();
+    if (!e.title) { msg.textContent = "제목을 입력하세요."; return; }
+    if (!(e.html || "").trim()) { msg.textContent = "html 파일을 고르거나 코드를 붙여넣으세요."; return; }
+    if (e.html.length > 500000) { msg.textContent = "코드가 너무 깁니다(최대 50만 자)."; return; }
+    const row = { kind: "sim", title: e.title, page: lesson.slide_count ? e.page : null, html: e.html, sim_full: !!e.sim_full && lesson.slide_count > 0, show_answer: false, named: false, questions: [] };
+    const to = row.page != null && e.page_to > row.page ? Math.min(e.page_to, lesson.slide_count) : null;
+    if (to != null || activities.some((x) => "page_to" in x)) row.page_to = to;
+    if (!e.id) { row.lesson_id = lesson.id; row.sort = activities.length; }
+    const saved = await save("activities", row, e.id);
+    if (!saved) return;
+    const { data } = await sb.from("activities").select("*").eq("lesson_id", lesson.id);
+    activities = sortActivities(data || []);
+    editing = JSON.parse(JSON.stringify(saved));
+    drawBuild();
+    flash("저장했습니다.");
+  }
+  return h("section", { class: "card stack editor" },
+    h("h2", {}, e.id ? "시뮬레이션 고치기" : "시뮬레이션 넣기"),
+    h("label", {}, "제목", title),
+    h("label", {}, "html 파일 올리기", file),
+    h("label", {}, "또는 코드 붙여넣기", code), size,
+    lesson.slide_count ? h("div", { class: "row wrap" },
+      h("label", {}, "어디에 넣을까요?", h("div", { class: "row" }, pageIn, h("span", {}, "쪽부터"), pageToIn, h("span", {}, "쪽까지")))) : null,
+    lesson.slide_count ? h("label", { class: "check" }, h("input", { type: "checkbox", checked: !!e.sim_full, onchange(ev) { e.sim_full = ev.target.checked; } }),
+      "슬라이드 자리에 크게 띄우기 (끄면 슬라이드 아래에 카드로 보입니다)") : null,
+    lesson.slide_count ? h("p", { class: "muted small" }, "슬라이드 사이에 넣으려면 PPT에 「시뮬레이션」 같은 빈 슬라이드를 한 장 끼워 두고, 그 쪽에 넣으면서 위 칸을 켜세요.") : null,
+    h("p", { class: "muted small" }, "시뮬레이션은 격리된 칸에서 실행되어 이 웹앱의 로그인 정보에 접근할 수 없습니다. 학생은 이 카드에 답을 입력하지 않습니다."),
+    msg,
+    h("div", { class: "row between" },
+      e.id ? h("button", { class: "ghost danger", type: "button", async onclick() {
+        if (!confirm("「" + e.title + "」 시뮬레이션을 지울까요?")) return;
+        const { error } = await sb.from("activities").delete().eq("id", e.id);
+        if (error) { msg.textContent = error.message; return; }
+        activities = activities.filter((a) => a.id !== e.id); editing = null; drawBuild();
+      } }, "지우기") : h("span", {}),
+      h("div", { class: "row" },
+        h("button", { class: "ghost", type: "button", onclick() { if ((e.html || "").trim()) openSimFull(e.title || "미리보기", e.html); else msg.textContent = "먼저 html을 넣으세요."; } }, "미리보기"),
+        h("button", { class: "ghost", type: "button", onclick() { editing = null; drawBuild(); } }, "닫기"),
+        h("button", { class: "primary", type: "button", onclick: saveSim }, "저장"))));
+}
+
 function editor() {
   const e = editing;
+  if (e.kind === "sim") return simEditor();
   if (isInfoActivity(e)) {
     const msg = h("p", { class: "error" });
     const title = h("input", { type: "text", maxlength: 100, value: e.title, placeholder: "예: 활동 안내", oninput() { e.title = title.value; } });
@@ -522,7 +603,7 @@ function drawStudents() {
       : h("span", { class: "tag ok" }, "정상");
     return h("tr", { class: locked ? "locked" : "" },
       h("td", {}, s.class_no), h("td", {}, s.name),
-      h("td", {}, mine.length + " / " + activities.length), h("td", {}, fmtTime(last)), h("td", {}, status),
+      h("td", {}, mine.length + " / " + activities.filter((a) => a.kind !== "sim").length), h("td", {}, fmtTime(last)), h("td", {}, status),
       h("td", { class: "actions" },
         h("button", {
           class: locked ? "primary" : "ghost", type: "button", disabled: !s.pin_set && !locked,
@@ -847,6 +928,7 @@ async function removeSlideFiles(l) {
 
 // ---------- CSV ----------
 function downloadCSV(acts, fileName) {
+  acts = acts.filter((a) => a.kind !== "sim");
   const cell = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
   const head = ["학번", "이름"];
   acts.forEach((a) => {

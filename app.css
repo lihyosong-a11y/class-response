@@ -218,3 +218,12 @@ td.actions { white-space: nowrap; text-align: right; }
 .credit { max-width: 1400px; margin: 0 auto; padding: 1.5rem 16px 2rem; text-align: center; color: var(--muted); font-size: .8rem; line-height: 1.6; }
 .credit a { color: var(--muted); }
 .slide-zoom ~ .credit, .overlay ~ .credit { display: none; }
+
+/* 시뮬레이션 */
+.sim-frame { display: block; width: 100%; aspect-ratio: 16 / 10; min-height: 320px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.sim-stage .sim-frame { aspect-ratio: 16 / 9; }
+main.lesson.split .sim-stage .sim-frame { max-height: calc(100vh - 9.5rem); }
+.sim-full { position: fixed; inset: 0; z-index: 45; background: #fff; display: flex; flex-direction: column; }
+.sim-full-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .5rem 1rem; border-bottom: 1px solid var(--line); }
+.sim-full .sim-frame { flex: 1; border: 0; border-radius: 0; aspect-ratio: auto; height: auto; min-height: 0; }
+textarea.mono { font-family: ui-monospace, Consolas, monospace; font-size: .85rem; }

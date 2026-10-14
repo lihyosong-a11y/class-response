@@ -203,7 +203,8 @@ function buildShell() {
   const conn = h("p", { class: "banner bad", hidden: true }, "연결이 끊겼습니다. 다시 연결하는 중…");
   const title = h("strong", {});
   const who = h("span", {});
-  const slideBox = h("div", { class: "slide-box" }, img,
+  const simStage = h("div", { class: "sim-stage", hidden: true });
+  const slideBox = h("div", { class: "slide-box" }, img, simStage,
     h("nav", { class: "pager" }, prev, where, next, back, h("span", { class: "spacer" }),
       h("button", { class: "ghost", type: "button", onclick: zoom }, "크게 보기")),
     h("p", { class: "muted small" }, "다음 쪽은 선생님이 넘기면 자동으로 열립니다."));
@@ -216,11 +217,15 @@ function buildShell() {
     h("main", { class: "lesson" }, conn, closed, slideBox, list));
   const anytimeHead = h("h2", { class: "section-head" }, "언제든 할 수 있는 활동");
   const empty = h("p", { class: "muted center" });
-  shell = { img, prev, next, where, back, closed, conn, title, who, slideBox, list, anytimeHead, empty };
+  shell = { img, simStage, prev, next, where, back, closed, conn, title, who, slideBox, list, anytimeHead, empty, stageSim: null, stageKey: "" };
 }
 
 // 슬라이드를 화면 가득 띄운다. 누르거나 Esc로 닫는다. 선생님이 쪽을 넘기면 띄운 그림도 바뀐다.
 function zoom() {
+  if (shell.stageSim) {
+    const a = shell.stageSim;
+    return loadSim(a).then((html) => openSimFull(a.title, html));
+  }
   if (shell.zoom) return;
   const big = h("img", { src: shell.img.src, alt: shell.img.alt });
   const box = h("div", { class: "slide-zoom", onclick: close }, big, h("p", {}, "눌러서 닫기 · 휴대폰은 가로로 돌리면 더 크게 보입니다"));
@@ -268,8 +273,12 @@ function render(pageChanged) {
   const acts = state.activities;
   // 큰 화면에서는 슬라이드와 질문을 나란히(split), 슬라이드가 없으면 가운데 한 줄(single)
   shell.slideBox.parentNode.className = "lesson " + (hasSlides ? "split" : "single");
-  const here = hasSlides ? acts.filter((a) => onPage(a, viewing)) : acts;
+  let here = hasSlides ? acts.filter((a) => onPage(a, viewing)) : acts;
   const anytime = hasSlides ? acts.filter((a) => a.page == null) : [];
+  // 「슬라이드 자리에 띄우기」 시뮬레이션은 슬라이드 그림 대신 위쪽에 크게 보인다
+  const stageSim = hasSlides ? here.find((a) => a.kind === "sim" && a.sim_full) : null;
+  showStageSim(stageSim);
+  if (stageSim) here = here.filter((a) => a !== stageSim);
   const els = here.map(cardFor);
   if (anytime.length) els.push(shell.anytimeHead, anytime.map(cardFor));
   if (!here.length && !anytime.length) {
@@ -282,10 +291,61 @@ function render(pageChanged) {
   }
 }
 
+// ---------- 시뮬레이션 ----------
+const simCache = new Map();   // 활동 id → { ver, html }
+
+async function loadSim(a) {
+  const hit = simCache.get(a.id);
+  if (hit && hit.ver === a.html_ver) return hit.html;
+  const { data, error } = await sb.rpc("student_sim", { p_token: token, p_activity: a.id });
+  if (error) throw error;
+  const html = typeof data === "string" ? data : "";
+  simCache.set(a.id, { ver: a.html_ver, html });
+  return html;
+}
+
+function showStageSim(a) {
+  shell.stageSim = a || null;
+  shell.img.hidden = !!a;
+  shell.simStage.hidden = !a;
+  const key = a ? a.id + ":" + a.html_ver : "";
+  if (key === shell.stageKey) return;
+  shell.stageKey = key;
+  shell.simStage.replaceChildren();
+  if (!a) return;
+  const f = simFrame(null, a.title);
+  shell.simStage.append(f);
+  loadSim(a).then((html) => { if (shell.stageKey === key) f.srcdoc = html; })
+    .catch(() => shell.simStage.replaceChildren(h("p", { class: "error" }, "시뮬레이션을 불러오지 못했습니다. 새로고침해 보세요.")));
+}
+
+// 슬라이드 아래에 붙는 시뮬레이션 카드
+function simCard(a) {
+  let c = cards.get(a.id);
+  if (!c) {
+    c = { el: h("section", { class: "card activity" }), key: "" };
+    cards.set(a.id, c);
+  }
+  const key = a.title + ":" + a.html_ver;
+  if (c.key !== key) {
+    c.key = key;
+    const f = simFrame(null, a.title);
+    c.el.replaceChildren(
+      h("div", { class: "card-head" }, h("h2", {}, a.title), h("span", { class: "badge" }, "시뮬레이션")),
+      h("p", { class: "muted small" }, "직접 조작해 보세요. 화면이 작으면 「화면 가득 보기」를 누르세요."),
+      h("button", { class: "primary", type: "button", onclick() { loadSim(a).then((html) => openSimFull(a.title, html)); } }, "화면 가득 보기"),
+      f);
+    loadSim(a).then((html) => { if (c.key === key) f.srcdoc = html; })
+      .catch(() => f.replaceWith(h("p", { class: "error" }, "시뮬레이션을 불러오지 못했습니다. 새로고침해 보세요.")));
+  }
+  return c.el;
+}
+
 // ---------- 활동 카드 ----------
 function draftKey(a) { return "cra-draft:" + token + ":" + a.id; }
 
 function cardFor(a) {
+  if (a.kind === "sim") return simCard(a);
   let c = cards.get(a.id);
   if (!c) {
     c = { el: h("section", { class: "card activity" }), form: h("div", { class: "stack" }), others: h("div", {}) };
