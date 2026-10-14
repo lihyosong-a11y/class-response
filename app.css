@@ -185,6 +185,9 @@ main.lesson .slide { cursor: zoom-in; }
 
 /* 슬라이드 미리보기 */
 .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: .5rem; }
+.thumb { margin: 0; display: grid; gap: .2rem; }
+.thumb figcaption { display: flex; justify-content: space-between; align-items: center; font-size: .82rem; color: var(--muted); }
+.thumb .link { min-height: 32px; padding: 0 .3rem; font-size: .82rem; }
 .thumbs img { width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #fff; border: 1px solid var(--line); border-radius: 6px; }
 progress { width: 100%; height: 10px; }
 input[type=file] { font: inherit; max-width: 100%; }

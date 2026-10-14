@@ -640,7 +640,12 @@ function slidesCard() {
     }
   });
   const thumbs = h("div", { class: "thumbs" });
-  for (let i = 1; i <= Math.min(lesson.slide_count, 60); i++) thumbs.append(h("img", { src: slideSrc(lesson, i), alt: i + "쪽", loading: "lazy" }));
+  for (let i = 1; i <= lesson.slide_count; i++) {
+    thumbs.append(h("figure", { class: "thumb" },
+      h("img", { src: slideSrc(lesson, i), alt: i + "쪽", loading: "lazy" }),
+      h("figcaption", {}, h("span", {}, i + "쪽"),
+        h("button", { class: "link danger", type: "button", "aria-label": i + "쪽 삭제", onclick() { deleteSlide(i, status); } }, "삭제"))));
+  }
   return h("section", { class: "card stack" },
     h("h2", {}, "슬라이드 " + (lesson.slide_count ? lesson.slide_count + "장" : "없음")),
     h("p", { class: "muted small" }, "PowerPoint에서 「파일 → 다른 이름으로 저장 → PDF」로 저장한 파일을 올리면 쪽마다 그림으로 바뀝니다. 그림 파일(PNG, JPG) 여러 장을 올려도 됩니다(파일 이름 순서). 100쪽까지."),
@@ -702,6 +707,58 @@ async function toSlideImages(files, progress) {
 }
 
 const slideFolder = (l) => me.id + "/" + l.id + "/";
+
+// 슬라이드 그림이 들어 있는 폴더(주소에서 읽는다). 다른 교사가 올렸거나 복제한 수업이면 원래 수업의 폴더다.
+function slideFolderOf(l) {
+  const m = /\/public\/slides\/(.+\/)\{n\}/.exec(l.slide_dir || "");
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+// 슬라이드 한 쪽 지우기: 그 쪽 그림을 지우고 뒤쪽 그림을 한 칸씩 앞으로 당긴다.
+// 질문의 쪽 번호도 함께 당긴다(지운 쪽에 붙어 있던 질문은 그 자리로 당겨진 다음 슬라이드에 붙는다).
+async function deleteSlide(k, status) {
+  const n = lesson.slide_count;
+  const folder = slideFolderOf(lesson);
+  if (!folder) return alert("이 수업의 슬라이드 위치를 알 수 없습니다. 슬라이드를 다시 올려 주세요.");
+  const base = lesson.slide_dir.split("?")[0];
+  if (folder !== slideFolder(lesson) || lessons.some((x) => x.id !== lesson.id && (x.slide_dir || "").split("?")[0] === base)) {
+    return alert("이 슬라이드는 복제한 다른 수업과 함께 쓰고 있어서 한 쪽만 지울 수 없습니다.\n이 수업에서 PDF를 「다시 올리기」하면 이 수업만의 슬라이드가 됩니다.");
+  }
+  const onIt = activities.filter((a) => a.page === k && !(a.page_to > k));
+  if (!confirm(k + "쪽 슬라이드를 지울까요? 뒤쪽 슬라이드가 한 칸씩 앞으로 당겨집니다." +
+    (onIt.length ? "\n이 쪽에만 있던 질문 " + onIt.length + "개는 지우지 않고, 그 자리로 당겨지는 다음 슬라이드에 붙습니다." : ""))) return;
+  const st = sb.storage.from("slides");
+  status.textContent = k + "쪽을 지우는 중…";
+  try {
+    let r = await st.remove([folder + k + ".jpg"]);
+    if (r.error) throw r.error;
+    for (let i = k + 1; i <= n; i++) {
+      status.textContent = "뒤쪽 슬라이드를 당기는 중 " + i + " / " + n;
+      r = await st.move(folder + i + ".jpg", folder + (i - 1) + ".jpg");
+      if (r.error) throw r.error;
+    }
+    const left = n - 1;
+    const shift = (p) => (p == null ? p : p > k ? p - 1 : p);
+    for (const a of activities) {
+      if (a.page == null) continue;
+      let page = Math.min(shift(a.page), Math.max(left, 1));
+      let to = a.page_to > a.page ? Math.min(shift(a.page_to), Math.max(left, 1)) : a.page_to ?? null;
+      if (to != null && to <= page) to = null;
+      if (page === a.page && to === (a.page_to ?? null)) continue;
+      const change = { page };
+      if ("page_to" in a) change.page_to = to;
+      const u = await sb.from("activities").update(change).eq("id", a.id);
+      if (u.error) throw u.error;
+    }
+    const dir = base + "?v=" + Date.now();   // 이름이 바뀐 그림을 브라우저가 예전 것으로 보이지 않게
+    const u = await sb.from("lessons").update({ slide_dir: left ? dir : "", slide_count: left, page: Math.min(Math.max(shift(lesson.page), 1), Math.max(left, 1)) }).eq("id", lesson.id);
+    if (u.error) throw u.error;
+    flash(k + "쪽을 지웠습니다.");
+    await loadLessons(lesson.id);
+  } catch (e) {
+    status.textContent = "지우는 중에 멈췄습니다: " + (e.message || e) + " · 남은 슬라이드를 확인하고, 이상하면 PDF를 다시 올려 주세요.";
+  }
+}
 
 async function uploadSlides(files, progress) {
   const images = await toSlideImages(files, progress);
