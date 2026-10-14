@@ -76,6 +76,12 @@ function linkedDescription(value) {
   return box;
 }
 
+function activityDescription(activity) {
+  const questions = activity.questions || [];
+  return questions.find((q) => q.intro)?.intro ||
+    [...new Set(questions.map((q) => q.description).filter(Boolean))].join("\n\n");
+}
+
 // 응답 모아 보기: 고르는 질문은 막대, 글은 목록. docs = [{ name, answers }]
 function summaryView(questions, docs, opts) {
   opts = opts || {};

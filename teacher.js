@@ -333,11 +333,13 @@ function drawBuild() {
 
 function editor() {
   const e = editing;
+  if (e.description === undefined) e.description = activityDescription(e);
   const hasResponses = e.id && responses.some((r) => r.activity_id === e.id);
   const msg = h("p", { class: "error" });
   const redraw = () => { const y = scrollY; drawBuild(); scrollTo(0, y); };
 
   const title = h("input", { type: "text", maxlength: 100, value: e.title, placeholder: "예: 예상해 보기", oninput() { e.title = title.value; } });
+  const description = h("textarea", { rows: 5, maxlength: 2000, placeholder: "설문 전체에 대한 설명을 입력하세요. 웹 주소는 학생 화면에서 링크가 됩니다.", oninput() { e.description = description.value; } }, e.description || "");
   const pageIn = h("input", { type: "number", min: 1, max: Math.max(lesson.slide_count, 1), value: e.page ?? lesson.page, class: "num", oninput() { e.page = parseInt(pageIn.value, 10) || 1; } });
   const placeSel = h("select", {
     onchange() { e.page = placeSel.value === "page" ? (parseInt(pageIn.value, 10) || 1) : null; redraw(); },
@@ -350,7 +352,6 @@ function editor() {
     }, Object.entries(TYPE_NAME).map(([k, v]) => h("option", { value: k, selected: q.type === k }, v)));
     const move = (d) => { const j = i + d; if (j < 0 || j >= e.questions.length) return; [e.questions[i], e.questions[j]] = [e.questions[j], e.questions[i]]; redraw(); };
     const text = h("input", { type: "text", maxlength: 300, value: q.text, placeholder: "질문을 입력하세요", oninput() { q.text = text.value; } });
-    const description = h("textarea", { rows: 3, maxlength: 2000, placeholder: "설명문을 입력하세요. https://로 시작하는 주소는 학생 화면에서 링크가 됩니다.", oninput() { q.description = description.value; } }, q.description || "");
     const choice = q.type === "choice" || q.type === "multi";
     const opts = choice ? h("textarea", {
       rows: Math.max(3, q.options.length + 1),
@@ -384,7 +385,6 @@ function editor() {
         h("button", { class: "link", type: "button", onclick() { move(1); } }, "아래로"),
         h("button", { class: "link danger", type: "button", onclick() { if (e.questions.length > 1) { e.questions.splice(i, 1); redraw(); } } }, "삭제")),
       h("label", {}, "질문", text),
-      h("label", {}, "설명문 (선택)", description),
       choice ? h("label", {}, "보기 (한 줄에 하나씩)", opts) : null,
       answerPick,
       explain ? h("label", {}, "해설", explain) : null,
@@ -396,7 +396,8 @@ function editor() {
     if (!e.title) { msg.textContent = "제목을 입력하세요."; return; }
     for (const [i, q] of e.questions.entries()) {
       q.text = (q.text || "").trim();
-      q.description = (q.description || "").trim();
+      delete q.description;
+      delete q.intro;
       if (!q.text) { msg.textContent = (i + 1) + "번 질문을 입력하세요."; return; }
       if (q.type === "choice" || q.type === "multi") {
         q.options = q.options.map((x) => x.trim()).filter(Boolean);
@@ -404,6 +405,7 @@ function editor() {
         if (new Set(q.options).size !== q.options.length) { msg.textContent = (i + 1) + "번 질문에 같은 보기가 두 번 있습니다."; return; }
       } else { delete q.options; delete q.answer; }
     }
+    if (e.questions.length && e.description.trim()) e.questions[0].intro = e.description.trim();
     const row = { kind: e.kind, title: e.title, page: e.page, show_answer: e.show_answer, named: e.named, questions: e.questions };
     if (!e.id) { row.lesson_id = lesson.id; row.sort = activities.length; }
     const saved = await save("activities", row, e.id);
@@ -430,6 +432,7 @@ function editor() {
     h("div", { class: "row wrap" },
       h("label", { class: "grow" }, "제목", title),
       lesson.slide_count ? h("label", {}, "어디에 보일까요?", h("div", { class: "row" }, placeSel, e.page != null ? pageIn : null, e.page != null ? h("span", {}, "쪽") : null)) : null),
+    h("label", {}, "설문 설명문 (선택)", description),
     h("div", { class: "row wrap" },
       e.kind === "quiz" ? h("label", { class: "check" }, h("input", { type: "checkbox", checked: e.show_answer, onchange(ev) { e.show_answer = ev.target.checked; } }), "제출 뒤 정답과 해설 보여 주기") : null,
       h("label", { class: "check" }, h("input", { type: "checkbox", checked: e.named, onchange(ev) { e.named = ev.target.checked; } }), "학생에게 공개할 때 이름 표시")),

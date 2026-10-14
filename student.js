@@ -319,7 +319,7 @@ function buildForm(c) {
         JSON.stringify(values[q.id]) === JSON.stringify(q.answer) ? "맞았습니다." : "정답: " + answerText(q.answer))
       : null;
     const explain = quizDone && q.explain ? h("p", { class: "tip small" }, "해설: " + q.explain) : null;
-    return h("div", { class: "question" }, q.description ? linkedDescription(q.description) : null, control, result, explain);
+    return h("div", { class: "question" }, control, result, explain);
   });
 
   async function save() {
@@ -363,6 +363,7 @@ function buildForm(c) {
 
   c.form.replaceChildren(...[
     h("div", { class: "card-head" }, h("h2", {}, a.title), h("span", { class: "badge" }, KIND_NAME[a.kind])),
+    activityDescription(a) ? linkedDescription(activityDescription(a)) : null,
     quizDone && a.total ? h("p", { class: "score" }, "점수 " + a.score + " / " + a.total) : null,
     rows, err, btn, status].flat().filter(Boolean));
 }
