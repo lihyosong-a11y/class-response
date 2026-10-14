@@ -90,9 +90,10 @@ function sortActivities(list) {
 
 async function loadResponses() {
   if (!lesson) return;
-  const st = await sb.from("students").select("id,class_no,name,pin_set,fails,locked_until,created_at,last_seen").eq("lesson_id", lesson.id);
+  // 이 수업에 들어온 학생(학생 계정은 웹앱 전체에 하나, 수업마다 참여 기록이 따로 있다)
+  const st = await sb.rpc("teacher_students", { p_lesson: lesson.id });
   if (st.error) return fatal(st.error);
-  students = st.data.sort((x, y) => x.class_no.localeCompare(y.class_no, "ko", { numeric: true }) || x.name.localeCompare(y.name, "ko"));
+  students = (st.data || []).sort((x, y) => x.class_no.localeCompare(y.class_no, "ko", { numeric: true }) || x.name.localeCompare(y.name, "ko"));
   const ids = activities.map((a) => a.id);
   if (!ids.length) { responses = []; return; }
   const rs = await sb.from("responses").select("*").in("activity_id", ids);
@@ -526,7 +527,7 @@ function drawStudents() {
         h("button", {
           class: locked ? "primary" : "ghost", type: "button", disabled: !s.pin_set && !locked,
           async onclick() {
-            if (!confirm(nameOf(s) + " 학생의 비밀번호를 초기화할까요?\n쓴 답은 그대로 남고, 다음에 들어올 때 새 비밀번호를 정합니다.")) return;
+            if (!confirm(nameOf(s) + " 학생의 비밀번호를 초기화할까요?\n모든 수업에 함께 적용됩니다. 쓴 답은 그대로 남고, 다음에 들어올 때 새 비밀번호를 정합니다.")) return;
             const { error } = await sb.from("students").update({ pin_hash: null, token: null, fails: 0, locked_until: null }).eq("id", s.id);
             if (error) return alert(error.message);
             await loadResponses();
@@ -537,18 +538,33 @@ function drawStudents() {
         h("button", {
           class: "link danger", type: "button",
           async onclick() {
-            if (!confirm(nameOf(s) + " 학생을 지울까요? 이 학생의 응답도 모두 지워집니다.")) return;
+            if (!confirm(nameOf(s) + " 학생을 이 수업에서 뺄까요? 이 수업에서 쓴 응답이 지워집니다.\n(다른 수업의 응답과 학생 계정은 남습니다. 학생이 다시 들어오면 다시 참여합니다.)")) return;
+            const ids = activities.map((a) => a.id);
+            if (ids.length) {
+              const r = await sb.from("responses").delete().eq("student_id", s.id).in("activity_id", ids);
+              if (r.error) return alert(r.error.message);
+            }
+            const { error } = await sb.from("lesson_students").delete().eq("lesson_id", lesson.id).eq("student_id", s.id);
+            if (error) return alert(error.message);
+            await loadResponses();
+            drawStudents();
+          },
+        }, "이 수업에서 빼기"),
+        h("button", {
+          class: "link danger", type: "button",
+          async onclick() {
+            if (!confirm(nameOf(s) + " 학생 계정을 완전히 지울까요?\n모든 수업에서 빠지고, 모든 수업의 응답이 지워집니다. 장난으로 만든 이름을 지울 때 쓰세요.")) return;
             const { error } = await sb.from("students").delete().eq("id", s.id);
             if (error) return alert(error.message);
             await loadResponses();
             drawStudents();
           },
-        }, "삭제")));
+        }, "계정 삭제")));
   });
   main.replaceChildren(h("section", { class: "card stack" },
     h("div", { class: "row between wrap" },
       h("h2", {}, "학생 " + students.length + "명"),
-      h("p", { class: "muted small" }, "비밀번호는 암호화되어 있어 교사도 볼 수 없습니다. 잊은 학생은 초기화해 주세요.")),
+      h("p", { class: "muted small" }, "학생 계정은 웹앱 전체에 하나라서, 어느 수업에서든 같은 학번·이름·비밀번호를 씁니다. 비밀번호는 암호화되어 교사도 볼 수 없습니다. 잊은 학생은 초기화해 주세요.")),
     students.length ? h("div", { class: "table-wrap" }, h("table", {},
       h("thead", {}, h("tr", {}, ["학번", "이름", "저장한 활동", "마지막 저장", "상태", ""].map((t) => h("th", {}, t)))),
       h("tbody", {}, rows))) : h("p", { class: "muted" }, "아직 입장한 학생이 없습니다.")));

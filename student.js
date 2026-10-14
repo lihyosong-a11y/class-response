@@ -4,6 +4,9 @@
 const app = document.getElementById("app");
 const params = new URLSearchParams(location.search);
 const POLL_MS = 3000;
+// 학생 계정은 웹앱 전체에 하나. 한 번 입장한 기기는 열쇠(token)를 기억해서, 새 수업 코드만 넣으면 바로 들어간다.
+const TOKEN_KEY = "cra-token";
+const ME_KEY = "cra-me";
 
 let code = "";          // 수업 코드
 let token = null;       // 입장 열쇠(이 기기에 저장)
@@ -19,12 +22,44 @@ else start();
 
 function start() {
   code = (params.get("c") || localStorage.getItem("cra-last-code") || "").trim();
-  token = code ? localStorage.getItem(tokenKey()) : null;
-  if (token) poll();
+  // 예전 판은 수업마다 열쇠를 따로 저장했다: 있으면 그대로 옮겨 쓴다
+  token = localStorage.getItem(TOKEN_KEY) || (code ? localStorage.getItem("cra-token:" + code.toLowerCase()) : null);
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  if (token && code) poll();
+  else if (token) showCodeOnly();
   else showEntry();
 }
 
-function tokenKey() { return "cra-token:" + code.toLowerCase(); }
+function enterLesson(newCode) {
+  code = newCode.trim();
+  localStorage.setItem("cra-last-code", code);
+  state = null;
+  following = true;
+  poll();
+}
+
+// 이미 입장한 기기: 수업 코드만 넣으면 된다
+function showCodeOnly(notice) {
+  stopPolling();
+  shell = null;
+  cards.clear();
+  const me = localStorage.getItem(ME_KEY) || "";
+  const codeIn = h("input", { type: "text", value: params.get("c") ? "" : code, autocomplete: "off", maxlength: 20, placeholder: "예: K7P2Q", autocapitalize: "characters", required: true });
+  const msg = h("p", { class: "msg" }, notice || "");
+  app.replaceChildren(h("main", { class: "narrow" },
+    h("header", { class: "intro" }, h("p", { class: "eyebrow" }, me ? me + " 학생" : "수업 응답"), h("h1", {}, "수업 코드 입력")),
+    h("form", {
+      class: "card stack",
+      onsubmit(e) {
+        e.preventDefault();
+        if (!codeIn.value.trim()) return;
+        history.replaceState(null, "", "?c=" + encodeURIComponent(codeIn.value.trim()));
+        enterLesson(codeIn.value);
+      },
+    }, h("label", {}, "수업 코드", codeIn), h("button", { class: "primary big", type: "submit" }, "입장하기"), msg),
+    h("p", { class: "center" }, h("button", { class: "link", type: "button", onclick() { logout(""); } }, me ? me + " 학생이 아니면: 다른 학생으로 들어가기" : "다른 학생으로 들어가기"))));
+  codeIn.focus();
+}
 
 // ---------- 입장 ----------
 function showEntry(notice) {
@@ -66,6 +101,7 @@ function showEntry(notice) {
       if (err === "no_lesson") msg.textContent = "수업 코드를 찾지 못했습니다. 선생님께 받은 코드를 확인하세요.";
       else if (err === "bad_name") msg.textContent = "학번과 이름을 확인하세요(각각 20자까지).";
       else if (err === "bad_pin") msg.textContent = "비밀번호는 숫자 4자리로 입력하세요.";
+      else if (err === "full") msg.textContent = "이 수업은 인원이 가득 찼습니다. 선생님께 알려 주세요.";
       else if (err === "need_confirm") {
         confirming = true;
         pin2Row.hidden = false;
@@ -80,7 +116,8 @@ function showEntry(notice) {
         token = data.token;
         code = data.code;
         localStorage.setItem("cra-last-code", code);
-        localStorage.setItem(tokenKey(), token);
+        localStorage.setItem(TOKEN_KEY, token);
+        localStorage.setItem(ME_KEY, data.class_no + " " + data.name);
         following = true;
         poll();
       } else msg.textContent = "알 수 없는 오류입니다. 다시 시도하세요.";
@@ -93,7 +130,7 @@ function showEntry(notice) {
     pin2Row,
     h("div", { class: "tip" },
       h("strong", {}, "처음 들어오나요?"),
-      h("p", {}, "처음 입력한 번호가 내 비밀번호가 됩니다. 휴대폰 비밀번호나 생일은 쓰지 마세요. 다른 기기에서도 같은 정보로 들어오면 이어서 쓸 수 있어요.")),
+      h("p", {}, "처음 입력한 번호가 내 비밀번호가 됩니다. 다른 수업에서도 같은 학번·이름·비밀번호를 씁니다. 휴대폰 비밀번호나 생일은 쓰지 마세요.")),
     btn, msg);
 
   app.replaceChildren(h("main", { class: "narrow" },
@@ -106,7 +143,9 @@ function showEntry(notice) {
 }
 
 function logout(notice) {
-  localStorage.removeItem(tokenKey());
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(ME_KEY);
+  if (code) localStorage.removeItem("cra-token:" + code.toLowerCase());
   token = null;
   state = null;
   showEntry(notice);
@@ -120,8 +159,10 @@ function stopPolling() {
 
 async function poll() {
   clearTimeout(timer);
-  const { data, error } = await sb.rpc("student_state", { p_token: token });
+  const { data, error } = await sb.rpc("student_state", { p_token: token, p_code: code });
   if (!token) return;
+  if (!error && data.error === "no_lesson") return showCodeOnly("수업 코드를 찾지 못했습니다. 선생님께 받은 코드를 확인하세요.");
+  if (!error && data.error === "full") return showCodeOnly("이 수업은 인원이 가득 찼습니다. 선생님께 알려 주세요.");
   if (error) {
     if (shell) shell.conn.hidden = false;
     else showEntry("연결하지 못했습니다. 인터넷을 확인하고 다시 입장하세요.");
@@ -169,7 +210,9 @@ function buildShell() {
   const list = h("div", { class: "stack" });
   app.replaceChildren(
     h("header", { class: "top" }, h("div", { class: "top-title" }, title, who),
-      h("button", { class: "link", type: "button", onclick() { logout("나갔습니다. 다시 들어오려면 입장하세요."); } }, "나가기")),
+      h("div", { class: "row" },
+        h("button", { class: "link", type: "button", onclick() { history.replaceState(null, "", location.pathname); showCodeOnly(); } }, "다른 수업"),
+        h("button", { class: "link", type: "button", onclick() { logout("나갔습니다. 다시 들어오려면 입장하세요."); } }, "나가기"))),
     h("main", { class: "lesson" }, conn, closed, slideBox, list));
   const anytimeHead = h("h2", { class: "section-head" }, "언제든 할 수 있는 활동");
   const empty = h("p", { class: "muted center" });
