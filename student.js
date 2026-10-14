@@ -319,7 +319,7 @@ function buildForm(c) {
         JSON.stringify(values[q.id]) === JSON.stringify(q.answer) ? "맞았습니다." : "정답: " + answerText(q.answer))
       : null;
     const explain = quizDone && q.explain ? h("p", { class: "tip small" }, "해설: " + q.explain) : null;
-    return h("div", { class: "question" }, control, result, explain);
+    return h("div", { class: "question" }, q.description ? linkedDescription(q.description) : null, control, result, explain);
   });
 
   async function save() {

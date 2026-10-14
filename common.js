@@ -54,6 +54,28 @@ function isEmptyAnswer(v) {
   return v == null || (Array.isArray(v) ? v.length === 0 : String(v).trim() === "");
 }
 
+// 설명문은 텍스트로 표시하고, 웹 주소만 안전한 링크로 바꾼다.
+function linkedDescription(value) {
+  const box = h("p", { class: "question-description" });
+  const urlPattern = /https?:\/\/[^\s<>"']+/g;
+  const source = String(value || "");
+  let from = 0;
+  for (const match of source.matchAll(urlPattern)) {
+    const raw = match[0];
+    const urlText = raw.replace(/[.,!?;:)\]]+$/, "");
+    box.append(document.createTextNode(source.slice(from, match.index)));
+    try {
+      const url = new URL(urlText);
+      if (url.protocol === "http:" || url.protocol === "https:") {
+        box.append(h("a", { href: url.href, target: "_blank", rel: "noopener noreferrer" }, urlText));
+      } else box.append(document.createTextNode(urlText));
+    } catch (_) { box.append(document.createTextNode(urlText)); }
+    from = match.index + urlText.length;
+  }
+  box.append(document.createTextNode(source.slice(from)));
+  return box;
+}
+
 // 응답 모아 보기: 고르는 질문은 막대, 글은 목록. docs = [{ name, answers }]
 function summaryView(questions, docs, opts) {
   opts = opts || {};

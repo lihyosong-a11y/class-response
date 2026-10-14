@@ -350,6 +350,7 @@ function editor() {
     }, Object.entries(TYPE_NAME).map(([k, v]) => h("option", { value: k, selected: q.type === k }, v)));
     const move = (d) => { const j = i + d; if (j < 0 || j >= e.questions.length) return; [e.questions[i], e.questions[j]] = [e.questions[j], e.questions[i]]; redraw(); };
     const text = h("input", { type: "text", maxlength: 300, value: q.text, placeholder: "질문을 입력하세요", oninput() { q.text = text.value; } });
+    const description = h("textarea", { rows: 3, maxlength: 2000, placeholder: "설명문을 입력하세요. https://로 시작하는 주소는 학생 화면에서 링크가 됩니다.", oninput() { q.description = description.value; } }, q.description || "");
     const choice = q.type === "choice" || q.type === "multi";
     const opts = choice ? h("textarea", {
       rows: Math.max(3, q.options.length + 1),
@@ -383,6 +384,7 @@ function editor() {
         h("button", { class: "link", type: "button", onclick() { move(1); } }, "아래로"),
         h("button", { class: "link danger", type: "button", onclick() { if (e.questions.length > 1) { e.questions.splice(i, 1); redraw(); } } }, "삭제")),
       h("label", {}, "질문", text),
+      h("label", {}, "설명문 (선택)", description),
       choice ? h("label", {}, "보기 (한 줄에 하나씩)", opts) : null,
       answerPick,
       explain ? h("label", {}, "해설", explain) : null,
@@ -394,6 +396,7 @@ function editor() {
     if (!e.title) { msg.textContent = "제목을 입력하세요."; return; }
     for (const [i, q] of e.questions.entries()) {
       q.text = (q.text || "").trim();
+      q.description = (q.description || "").trim();
       if (!q.text) { msg.textContent = (i + 1) + "번 질문을 입력하세요."; return; }
       if (q.type === "choice" || q.type === "multi") {
         q.options = q.options.map((x) => x.trim()).filter(Boolean);
