@@ -6,6 +6,9 @@ const configured = (/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(SB_URL) || /^htt
   && !/여기에/.test(SUPABASE_KEY) && String(SUPABASE_KEY).trim() !== "";
 const sb = configured ? supabase.createClient(SB_URL, String(SUPABASE_KEY).trim()) : null;
 
+// 만든 사람 표시. 고쳐 쓰거나 나눌 때도 지우지 말아 주세요(LICENSE.md).
+const CREDIT = { name: "이효송", year: 2026 };
+
 const KIND_NAME = { slide: "슬라이드 질문", survey: "설문", quiz: "퀴즈" };
 const TYPE_NAME = { choice: "하나 고르기", multi: "여러 개 고르기", short: "짧은 글", long: "긴 글" };
 
@@ -91,3 +94,11 @@ function notConfigured(app) {
     h("p", { class: "muted small" }, "지금 읽은 주소: " + SUPABASE_URL),
     h("p", { class: "muted small" }, "주소는 https://(영문 소문자·숫자).supabase.co 모양이어야 합니다. 고친 뒤 GitHub에 다시 올렸다면 1~2분 뒤 Ctrl+F5로 새로고침하세요."))));
 }
+
+// 모든 화면 맨 아래에 만든 사람과 이용 조건을 보인다
+document.addEventListener("DOMContentLoaded", () => {
+  document.body.append(h("footer", { class: "credit" },
+    "수업 응답 웹앱 · 만든 사람 ", h("strong", {}, CREDIT.name), " · © " + CREDIT.year + " · ",
+    h("a", { href: "https://creativecommons.org/licenses/by-nc/4.0/deed.ko", target: "_blank", rel: "noopener noreferrer" }, "CC BY-NC 4.0"),
+    " · 출처를 밝히면 수업에 자유롭게 쓰고 고칠 수 있습니다(판매 금지)"));
+});

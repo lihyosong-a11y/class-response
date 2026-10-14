@@ -208,3 +208,8 @@ td.actions { white-space: nowrap; text-align: right; }
   .bar-row { grid-template-columns: minmax(0, 1fr) 3rem; }
   .bar-track { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* 만든 사람 표시 */
+.credit { max-width: 1400px; margin: 0 auto; padding: 1.5rem 16px 2rem; text-align: center; color: var(--muted); font-size: .8rem; line-height: 1.6; }
+.credit a { color: var(--muted); }
+.slide-zoom ~ .credit, .overlay ~ .credit { display: none; }
