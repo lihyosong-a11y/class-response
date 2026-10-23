@@ -448,7 +448,7 @@ function editor() {
   if (isInfoActivity(e)) {
     const msg = h("p", { class: "error" });
     const title = h("input", { type: "text", maxlength: 100, value: e.title, placeholder: "예: 활동 안내", oninput() { e.title = title.value; } });
-    const body = h("textarea", { rows: 10, maxlength: 5000, placeholder: "설명과 링크를 입력하세요. https:// 주소는 학생 화면에서 클릭할 수 있습니다.", oninput() { e.questions[0].text = body.value; } }, e.questions[0].text || "");
+    const body = h("textarea", { rows: 10, maxlength: 15000, placeholder: "설명과 링크를 입력하세요. https:// 주소는 학생 화면에서 클릭할 수 있습니다.", oninput() { e.questions[0].text = body.value; } }, e.questions[0].text || "");
     return h("section", { class: "card stack editor" },
       h("h2", {}, e.id ? "설명 카드 고치기" : "설명 카드 만들기"),
       h("label", {}, "제목", title), h("label", {}, "설명문", body),
@@ -479,7 +479,7 @@ function editor() {
   const redraw = () => { const y = scrollY; drawBuild(); scrollTo(0, y); };
 
   const title = h("input", { type: "text", maxlength: 100, value: e.title, placeholder: "예: 예상해 보기", oninput() { e.title = title.value; } });
-  const description = h("textarea", { rows: 5, maxlength: 5000, placeholder: "설문 전체에 대한 설명을 입력하세요. 웹 주소는 학생 화면에서 링크가 됩니다.", oninput() { e.description = description.value; } }, e.description || "");
+  const description = h("textarea", { rows: 5, maxlength: 15000, placeholder: "설문 전체에 대한 설명을 입력하세요. 웹 주소는 학생 화면에서 링크가 됩니다.", oninput() { e.description = description.value; } }, e.description || "");
   const pageIn = h("input", { type: "number", min: 1, max: Math.max(lesson.slide_count, 1), value: e.page ?? lesson.page, class: "num", "aria-label": "시작 쪽", oninput() { e.page = parseInt(pageIn.value, 10) || 1; } });
   // 여러 쪽에 걸쳐 같은 질문을 띄울 때 끝 쪽. 비우면 시작 쪽 한 쪽에만 보인다
   const pageToIn = h("input", { type: "number", min: 1, max: Math.max(lesson.slide_count, 1), value: e.page_to > e.page ? e.page_to : "", placeholder: "(한 쪽만)", class: "num", "aria-label": "끝 쪽", oninput() { e.page_to = parseInt(pageToIn.value, 10) || null; } });
