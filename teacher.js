@@ -214,7 +214,7 @@ function refreshRun() {
 
   const shown = activities.filter((a) => L.slide_count === 0 || onPage(a, L.page) || a.page == null);
   // 「슬라이드 자리에 띄우기」 시뮬레이션: 교사 화면에서도 슬라이드 대신 띄운다(다시 그릴 때마다 새로 띄우지 않게 key로 확인)
-  const stageSim = L.slide_count > 0 ? shown.find((a) => a.kind === "sim" && a.sim_full && onPage(a, L.page)) : null;
+  const stageSim = L.slide_count > 0 ? shown.find((a) => a.kind === "sim" && a.sim_full && !a.shared && onPage(a, L.page)) : null;
   const simKey = stageSim ? stageSim.id + ":" + (stageSim.html || "").length + ":" + stageSim.title : "";
   run.img.hidden = !!stageSim;
   run.simStage.hidden = !stageSim;
@@ -251,11 +251,16 @@ function drawRoster(shown) {
 }
 
 function runBlock(a) {
+  // 시뮬레이션의 shared 칸 = 학생 화면에서 숨김(원래 화면을 보여 줌)
   if (a.kind === "sim") return h("section", { class: "card stack" },
     h("div", { class: "row between" },
       h("div", {}, h("p", { class: "muted small" }, "시뮬레이션 · " + whereText(a)), h("h2", {}, a.title)),
-      h("button", { class: "primary", type: "button", onclick() { openSimFull(a.title, a.html); } }, "크게 실행")),
-    h("p", { class: "pill" }, a.sim_full && lesson.slide_count ? "학생 화면: 슬라이드 자리에 크게 보임" : "학생 화면: 슬라이드 아래 카드로 보임"));
+      h("button", { class: "ghost", type: "button", onclick() { openSimFull(a.title, a.html); } }, "크게 실행")),
+    h("div", { class: "row between" },
+      h("p", { class: a.shared ? "pill" : "pill on" }, a.shared ? "학생 화면: 원래 화면 (시뮬레이션 숨김)"
+        : a.sim_full && lesson.slide_count ? "학생 화면: 슬라이드 자리에 시뮬레이션" : "학생 화면: 슬라이드 아래 시뮬레이션 카드"),
+      h("button", { class: a.shared ? "primary" : "ghost", type: "button", async onclick() { await setActivity(a, { shared: !a.shared }); } },
+        a.shared ? "시뮬레이션 보이기" : "원래 화면 보이기")));
   if (isInfoActivity(a)) return h("section", { class: "card stack" },
     h("div", { class: "row between" },
       h("div", {}, h("p", { class: "muted small" }, "설명 카드 · " + whereText(a)), h("h2", {}, a.title)),

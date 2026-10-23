@@ -270,7 +270,8 @@ function render(pageChanged) {
   }
 
   // 슬라이드가 없는 수업은 활동을 모두 보여 준다
-  const acts = state.activities;
+  // 교사가 「원래 화면 보이기」로 숨긴 시뮬레이션(shared)은 빼고 보여 준다
+  const acts = state.activities.filter((a) => !(a.kind === "sim" && a.shared));
   // 큰 화면에서는 슬라이드와 질문을 나란히(split), 슬라이드가 없으면 가운데 한 줄(single)
   shell.slideBox.parentNode.className = "lesson " + (hasSlides ? "split" : "single");
   let here = hasSlides ? acts.filter((a) => onPage(a, viewing)) : acts;
