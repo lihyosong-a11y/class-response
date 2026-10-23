@@ -475,19 +475,24 @@ function editor() {
     const msg = h("p", { class: "error" });
     const title = h("input", { type: "text", maxlength: 100, value: e.title, placeholder: "예: 활동 안내", oninput() { e.title = title.value; } });
     const body = h("textarea", { rows: 10, maxlength: 15000, placeholder: "설명과 링크를 입력하세요. https:// 주소는 학생 화면에서 클릭할 수 있습니다.", oninput() { e.questions[0].text = body.value; } }, e.questions[0].text || "");
-    // 학생 파일 받기: 설명문 뒤에 「파일 올리기」 질문 하나를 붙인다(끄면 지운다)
-    let upload = e.questions.find((q) => q.type === "file");
-    const uploadText = h("input", { type: "text", maxlength: 300, value: upload ? upload.text : "측정한 CSV 파일을 올리세요", oninput() { if (upload) upload.text = uploadText.value; } });
-    uploadText.hidden = !upload;
-    const uploadOn = h("input", { type: "checkbox", checked: !!upload, onchange() {
-      if (uploadOn.checked) { upload = upload || { id: newId(), type: "file", text: uploadText.value }; e.questions = [e.questions[0], upload]; }
-      else e.questions = [e.questions[0]];
-      uploadText.hidden = !uploadOn.checked;
-    } });
+    // 학생 파일 받기: 설명문 뒤에 「파일 올리기」 질문을 붙인다(최대 3개, 칸마다 따로 받는다)
+    const uploadBox = h("div", { class: "stack" });
+    const drawUploads = () => {
+      const ups = e.questions.slice(1);
+      uploadBox.replaceChildren(...ups.map((q, i) => {
+        const t = h("input", { type: "text", maxlength: 300, value: q.text, style: "flex:1;min-width:12rem", placeholder: "안내 문장", oninput() { q.text = t.value; } });
+        return h("div", { class: "row" }, h("strong", {}, "파일 " + (i + 1)), t,
+          h("button", { class: "link danger", type: "button", onclick() { e.questions.splice(i + 1, 1); drawUploads(); } }, "빼기"));
+      }), ups.length < 3 ? h("div", { class: "row" }, h("button", { class: "ghost", type: "button", onclick() {
+        e.questions.push({ id: newId(), type: "file", text: ups.length ? "그래프 사진을 올리세요" : "측정한 CSV 파일을 올리세요" });
+        drawUploads();
+      } }, ups.length ? "+ 파일 칸 더하기" : "+ 학생에게 파일 받기")) : "");
+    };
+    drawUploads();
     return h("section", { class: "card stack editor" },
       h("h2", {}, e.id ? "설명 카드 고치기" : "설명 카드 만들기"),
       h("label", {}, "제목", title), h("label", {}, "설명문", body),
-      h("label", { class: "check" }, uploadOn, "학생에게 파일 받기 (CSV 등 글자 파일 최대 2MB, 또는 사진)"), uploadText,
+      h("div", { class: "stack" }, h("p", { class: "muted small" }, "학생에게 파일 받기 (칸마다 파일 하나 · CSV 등 글자 파일 최대 2MB 또는 사진 · 최대 3칸)"), uploadBox),
       h("p", { class: "muted small" }, "파일 받기를 켜지 않으면 학생은 이 카드에 답을 입력하지 않습니다."), msg,
       h("div", { class: "row between" },
         e.id ? h("button", { class: "ghost danger", type: "button", async onclick() {
@@ -501,7 +506,8 @@ function editor() {
           h("button", { class: "primary", type: "button", async onclick() {
             e.title = e.title.trim(); e.questions[0].text = e.questions[0].text.trim();
             if (!e.title || !e.questions[0].text) { msg.textContent = "제목과 설명문을 입력하세요."; return; }
-            if (upload && uploadOn.checked && !(upload.text = upload.text.trim())) { msg.textContent = "파일 받기 안내 문장을 입력하세요."; return; }
+            const blank = e.questions.slice(1).findIndex((q) => !(q.text = q.text.trim()));
+            if (blank >= 0) { msg.textContent = "파일 " + (blank + 1) + "의 안내 문장을 입력하세요."; return; }
             const row = { kind: "survey", title: e.title, page: e.page, show_answer: false, named: false, questions: e.questions };
             if (!e.id) { row.lesson_id = lesson.id; row.sort = activities.length; }
             const saved = await save("activities", row, e.id);
