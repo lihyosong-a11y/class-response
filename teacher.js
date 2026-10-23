@@ -291,11 +291,28 @@ function runBlock(a) {
       }, a.shared ? "공개 끝내기" : "학생에게 공개")),
     h("p", { class: a.shared ? "pill on" : "pill" }, a.shared ? "학생에게 공개 중 (" + (a.named ? "이름과 함께" : "이름 없이") + ")" : "학생에게는 보이지 않음"),
     h("p", { class: "muted small" }, "응답 " + docs.length + " / " + students.length + "명" + (avg ? " · 평균 " + avg : "")),
-    summaryView(a.questions, docs),
+    summaryView(a.questions, docs, { fileButton }),
     h("div", { class: "row" },
-      h("button", { class: "ghost", type: "button", onclick() { openModal(a.title, h("div", { class: "big-view" }, summaryView(a.questions, docsOf(a)))); } }, "크게 보기"),
+      h("button", { class: "ghost", type: "button", onclick() { openModal(a.title, h("div", { class: "big-view" }, summaryView(a.questions, docsOf(a), { fileButton }))); } }, "크게 보기"),
       h("button", { class: "ghost", type: "button", onclick() { openModal(a.title + " · 학생별", responseTable(a)); } }, "학생별 표"),
       h("button", { class: "ghost", type: "button", onclick() { downloadCSV([a], lesson.code + "_" + a.title); } }, "CSV")));
+}
+
+// 학생이 올린 파일 받기(내용은 response_files에 따로 있어 누를 때 가져온다)
+function fileButton(d, q) {
+  return h("button", { class: "link", type: "button", async onclick() {
+    const { data, error } = await sb.from("response_files").select("name, content")
+      .eq("student_id", d.r.student_id).eq("activity_id", d.r.activity_id).eq("question_id", q.id).maybeSingle();
+    if (error) return alert("파일을 받지 못했습니다: " + error.message);
+    if (!data) return alert("파일이 없습니다.");
+    const s = studentById(d.r.student_id);
+    const url = URL.createObjectURL(new Blob(["﻿" + data.content], { type: "text/csv;charset=utf-8" }));
+    const link = h("a", { href: url, download: ((s ? s.class_no + "_" + s.name + "_" : "") + data.name).replace(/[\\/:*?"<>|]/g, "_") });
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } }, "받기");
 }
 
 function responseTable(a) {
@@ -306,7 +323,8 @@ function responseTable(a) {
       const r = responses.find((x) => x.activity_id === a.id && x.student_id === s.id);
       return h("tr", { class: r ? "" : "missing" }, h("td", {}, s.class_no), h("td", {}, s.name),
         a.kind === "quiz" ? h("td", {}, r && r.total ? r.score + "/" + r.total : "") : null,
-        a.questions.map((q) => h("td", {}, r ? answerText(r.answers[q.id]) : "")),
+        a.questions.map((q) => h("td", {}, r ? answerText(r.answers[q.id]) : "",
+          r && q.type === "file" && r.answers[q.id] ? [" ", fileButton({ r }, q)] : null)),
         h("td", {}, r ? fmtTime(r.updated_at) : "미제출"));
     }))));
 }
@@ -639,6 +657,7 @@ function drawStudents() {
             if (ids.length) {
               const r = await sb.from("responses").delete().eq("student_id", s.id).in("activity_id", ids);
               if (r.error) return alert(r.error.message);
+              await sb.from("response_files").delete().eq("student_id", s.id).in("activity_id", ids);
             }
             const { error } = await sb.from("lesson_students").delete().eq("lesson_id", lesson.id).eq("student_id", s.id);
             if (error) return alert(error.message);

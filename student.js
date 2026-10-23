@@ -418,6 +418,36 @@ function buildForm(c) {
           }),
           h("span", {}, o), right ? h("strong", { class: "right-mark" }, "정답") : null);
       }));
+    } else if (q.type === "file") {
+      // 파일 올리기: 고르는 즉시 서버에 올리고, 응답에는 파일 이름과 크기만 넣는다
+      const info = h("p", { class: "muted small" });
+      const showInfo = () => {
+        const v = values[q.id];
+        info.textContent = v && v.name ? "올린 파일: " + v.name + " (" + fmtSize(v.size) + ")" : "아직 올린 파일이 없습니다.";
+      };
+      const input = h("input", { type: "file", accept: ".csv,.txt,text/csv,text/plain", disabled: quizDone, async onchange() {
+        const f = input.files[0];
+        if (!f) return;
+        err.textContent = "";
+        if (f.size > 2000000) { err.textContent = "파일이 너무 큽니다(최대 2MB)."; input.value = ""; return; }
+        info.textContent = "올리는 중…";
+        const { data, error } = await sb.rpc("student_file", { p_token: token, p_activity: a.id, p_question: q.id, p_name: f.name, p_content: await f.text() });
+        input.value = "";
+        if (!error && data.error === "logged_out") return logout("다시 입장해 주세요.");
+        if (error || data.error) {
+          err.textContent = data && data.error === "closed" ? "지금은 제출이 닫혀 있습니다. 선생님이 열면 다시 올리세요."
+            : "파일을 올리지 못했습니다. (" + (error ? error.message : data.error) + ")";
+          showInfo();
+          return;
+        }
+        values[q.id] = { name: f.name, size: f.size };
+        saveDraft();
+        showInfo();
+        // 다른 질문에 모두 답했으면 바로 저장한다(퀴즈는 직접 제출)
+        if (a.kind !== "quiz" && !a.questions.some((x) => isEmptyAnswer(values[x.id]))) save();
+      } });
+      showInfo();
+      control = h("label", {}, label, input, info);
     } else {
       const input = q.type === "short"
         ? h("input", { type: "text", maxlength: 200, value: values[q.id] || "", disabled: quizDone })

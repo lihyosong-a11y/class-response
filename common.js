@@ -10,7 +10,7 @@ const sb = configured ? supabase.createClient(SB_URL, String(SUPABASE_KEY).trim(
 const CREDIT = { name: "이효송", year: 2026 };
 
 const KIND_NAME = { slide: "슬라이드 질문", survey: "설문", quiz: "퀴즈", sim: "시뮬레이션" };
-const TYPE_NAME = { choice: "하나 고르기", multi: "여러 개 고르기", short: "짧은 글", long: "긴 글" };
+const TYPE_NAME = { choice: "하나 고르기", multi: "여러 개 고르기", short: "짧은 글", long: "긴 글", file: "파일 올리기" };
 
 // 화면 요소 만들기. 학생이 쓴 글은 늘 글자(텍스트)로만 넣는다(innerHTML을 쓰지 않음).
 function h(tag, attrs, ...kids) {
@@ -69,9 +69,14 @@ function fmtTime(t) {
     String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
 }
 
+function fmtSize(bytes) {
+  return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + "MB" : Math.max(1, Math.round(bytes / 1024)) + "KB";
+}
+
 // 응답 하나를 글로: 여러 개 고르기는 쉼표로 잇는다
 function answerText(v) {
   if (Array.isArray(v)) return v.join(", ");
+  if (v && typeof v === "object") return v.name || "";   // 올린 파일 { name, size }
   return v == null ? "" : String(v);
 }
 
@@ -153,7 +158,8 @@ function summaryView(questions, docs, opts) {
       }));
     }
     return h("div", { class: "sum-block" }, head,
-      answered.length ? answered.map((d) => h("p", { class: "note" }, d.name ? h("strong", {}, d.name + " · ") : null, answerText(d.answers[q.id])))
+      answered.length ? answered.map((d) => h("p", { class: "note" }, d.name ? h("strong", {}, d.name + " · ") : null, answerText(d.answers[q.id]),
+          q.type === "file" && opts.fileButton ? [" ", opts.fileButton(d, q)] : null))
         : h("p", { class: "muted small" }, opts.empty || "아직 응답이 없습니다."));
   });
 }
