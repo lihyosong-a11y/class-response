@@ -379,7 +379,7 @@ function buildForm(c) {
     c.refresh = () => {};
     c.form.replaceChildren(
       h("div", { class: "card-head" }, h("h2", {}, a.title), h("span", { class: "badge" }, "설명 카드")),
-      linkedDescription(a.questions[0].text));
+      copyableDescription(a.questions[0].text));
     return;
   }
   const quizDone = a.kind === "quiz" && !!a.mine;
@@ -474,7 +474,7 @@ function buildForm(c) {
 
   c.form.replaceChildren(...[
     h("div", { class: "card-head" }, h("h2", {}, a.title), h("span", { class: "badge" }, KIND_NAME[a.kind])),
-    activityDescription(a) ? linkedDescription(activityDescription(a)) : null,
+    activityDescription(a) ? copyableDescription(activityDescription(a)) : null,
     quizDone && a.total ? h("p", { class: "score" }, "점수 " + a.score + " / " + a.total) : null,
     rows, err, btn, status].flat().filter(Boolean));
 }

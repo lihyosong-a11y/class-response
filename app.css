@@ -136,6 +136,9 @@ main.lesson .slide { cursor: zoom-in; }
 .question { display: grid; gap: .4rem; }
 .question-description { margin: 0; padding: .65rem .8rem; background: var(--bg); border-left: 3px solid var(--accent); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .question-description a { color: var(--accent-ink); text-decoration: underline; }
+.description-box { gap: .4rem; }
+.description-box .row { justify-content: flex-end; }
+.description-box .copy { padding: .3rem .8rem; }
 .score { font-size: 1.2rem; font-weight: 700; color: var(--ok); }
 .others { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); display: grid; gap: .6rem; }
 

@@ -101,6 +101,26 @@ function linkedDescription(value) {
   return box;
 }
 
+// 학생 화면의 설명문: 위에 「전체 복사」 버튼을 붙인다(코드 등을 한 번에 복사)
+function copyableDescription(value) {
+  const text = String(value || "");
+  const btn = h("button", { class: "ghost small copy", type: "button", async onclick() {
+    let ok = false;
+    try { await navigator.clipboard.writeText(text); ok = true; } catch (_) {
+      // 클립보드 권한이 없는 브라우저: 숨긴 칸에 넣고 복사
+      const t = h("textarea", { readonly: true, style: "position:fixed;opacity:0" }, text);
+      document.body.append(t);
+      t.select();
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      t.remove();
+    }
+    btn.textContent = ok ? "✓ 복사됨" : "복사하지 못했습니다";
+    clearTimeout(btn.timer);
+    btn.timer = setTimeout(() => { btn.textContent = "전체 복사"; }, 2000);
+  } }, "전체 복사");
+  return h("div", { class: "stack description-box" }, h("div", { class: "row" }, btn), linkedDescription(text));
+}
+
 function activityDescription(activity) {
   const questions = activity.questions || [];
   return questions.find((q) => q.intro)?.intro ||
