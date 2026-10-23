@@ -692,9 +692,13 @@ function drawSettings() {
     // 슬라이드 그림은 같은 것을 함께 쓴다(원래 수업을 지워도 다른 수업이 쓰는 그림은 남긴다)
     await sb.from("lessons").update({ slide_dir: lesson.slide_dir, slide_count: lesson.slide_count }).eq("id", copy.id);
     if (activities.length) {
-      const r = await sb.from("activities").insert(activities.map((a) => ({
-        lesson_id: copy.id, kind: a.kind, title: a.title, page: a.page, show_answer: a.show_answer, named: a.named, questions: a.questions, sort: a.sort,
-      })));
+      const r = await sb.from("activities").insert(activities.map((a) => {
+        const row = { lesson_id: copy.id, kind: a.kind, title: a.title, page: a.page, show_answer: a.show_answer, named: a.named, questions: a.questions, sort: a.sort };
+        // 시뮬레이션은 html과 띄우는 방식·숨김도 함께 복사한다
+        if (a.kind === "sim") Object.assign(row, { html: a.html, sim_full: a.sim_full, shared: a.shared });
+        if ("page_to" in a) row.page_to = a.page_to;
+        return row;
+      }));
       if (r.error) alert("활동을 복사하지 못했습니다: " + r.error.message);
     }
     await loadLessons(copy.id);
