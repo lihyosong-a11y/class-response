@@ -280,7 +280,9 @@ function runBlock(a) {
     answerQuestions(a).length ? [
       h("p", { class: "muted small" }, "파일 제출 " + docsOf(a).length + " / " + students.length + "명"),
       summaryView(a.questions, docsOf(a), { fileButton }),
-      h("button", { class: "ghost", type: "button", onclick() { openModal(a.title + " · 학생별", responseTable(a)); } }, "학생별 표"),
+      h("div", { class: "row" },
+        h("button", { class: "ghost", type: "button", onclick() { openPhotos(a); } }, "사진 모아 보기"),
+        h("button", { class: "ghost", type: "button", onclick() { openModal(a.title + " · 학생별", responseTable(a)); } }, "학생별 표")),
     ] : null);
   const docs = docsOf(a);
   const scored = docs.filter((d) => d.r.total);
@@ -299,9 +301,30 @@ function runBlock(a) {
     summaryView(a.questions, docs, { fileButton }),
     h("div", { class: "row" },
       h("button", { class: "ghost", type: "button", onclick() { openModal(a.title, h("div", { class: "big-view" }, summaryView(a.questions, docsOf(a), { fileButton }))); } }, "크게 보기"),
+      hasFileQuestion(a) ? h("button", { class: "ghost", type: "button", onclick() { openPhotos(a); } }, "사진 모아 보기") : null,
       h("button", { class: "ghost", type: "button", onclick() { openModal(a.title + " · 학생별", responseTable(a)); } }, "학생별 표"),
       h("button", { class: "ghost", type: "button", onclick() { downloadCSV([a], lesson.code + "_" + a.title); } }, "CSV")));
 }
+
+// 사진 모아 보기: 이 활동에 학생들이 올린 사진을 한 화면에(TV로 띄워 함께 본다). 누르면 크게
+async function openPhotos(a) {
+  const { data, error } = await sb.from("response_files").select("student_id, question_id, content")
+    .eq("activity_id", a.id).like("content", "data:image/%");
+  if (error) return alert("사진을 불러오지 못했습니다: " + error.message);
+  const files = answerQuestions(a).filter((q) => q.type === "file");
+  const order = (x) => students.findIndex((s) => s.id === x.student_id);
+  const body = files.map((q) => {
+    const photos = data.filter((f) => f.question_id === q.id && studentById(f.student_id)).sort((x, y) => order(x) - order(y));
+    return h("div", { class: "stack" }, files.length > 1 ? h("h3", {}, q.text) : null,
+      photos.length ? h("div", { class: "photo-grid" }, photos.map((f) => {
+        const who = nameOf(studentById(f.student_id));
+        return h("figure", {}, h("img", { src: f.content, alt: who, onclick() { openModal(who, h("img", { class: "photo-big", src: f.content, alt: who })); } }), h("figcaption", {}, who));
+      })) : h("p", { class: "muted" }, "아직 올라온 사진이 없습니다."));
+  });
+  openModal(a.title + " · 사진", h("div", { class: "stack" }, body));
+}
+
+const hasFileQuestion = (a) => answerQuestions(a).some((q) => q.type === "file");
 
 // 학생이 올린 파일 받기(내용은 response_files에 따로 있어 누를 때 가져온다)
 function fileButton(d, q) {
@@ -489,9 +512,13 @@ function editor() {
       } }, ups.length ? "+ 파일 칸 더하기" : "+ 학생에게 파일 받기")) : "");
     };
     drawUploads();
+    // 슬라이드 수업: 여러 쪽에 걸쳐 보이게(끝 쪽을 비우면 시작 쪽 한 쪽에만)
+    const infoPageIn = h("input", { type: "number", min: 1, max: Math.max(lesson.slide_count, 1), value: e.page ?? lesson.page, class: "num", "aria-label": "시작 쪽", oninput() { e.page = parseInt(infoPageIn.value, 10) || 1; } });
+    const infoPageToIn = h("input", { type: "number", min: 1, max: Math.max(lesson.slide_count, 1), value: e.page_to > e.page ? e.page_to : "", placeholder: "(한 쪽만)", class: "num", "aria-label": "끝 쪽", oninput() { e.page_to = parseInt(infoPageToIn.value, 10) || null; } });
     return h("section", { class: "card stack editor" },
       h("h2", {}, e.id ? "설명 카드 고치기" : "설명 카드 만들기"),
       h("label", {}, "제목", title), h("label", {}, "설명문", body),
+      lesson.slide_count && e.page != null ? h("label", {}, "어디에 보일까요?", h("div", { class: "row" }, infoPageIn, h("span", {}, "쪽부터"), infoPageToIn, h("span", {}, "쪽까지"))) : null,
       h("div", { class: "stack" }, h("p", { class: "muted small" }, "학생에게 파일 받기 (칸마다 파일 하나 · CSV 등 글자 파일 최대 2MB 또는 사진 · 최대 3칸)"), uploadBox),
       h("p", { class: "muted small" }, "파일 받기를 켜지 않으면 학생은 이 카드에 답을 입력하지 않습니다."), msg,
       h("div", { class: "row between" },
@@ -509,6 +536,8 @@ function editor() {
             const blank = e.questions.slice(1).findIndex((q) => !(q.text = q.text.trim()));
             if (blank >= 0) { msg.textContent = "파일 " + (blank + 1) + "의 안내 문장을 입력하세요."; return; }
             const row = { kind: "survey", title: e.title, page: e.page, show_answer: false, named: false, questions: e.questions };
+            const to = row.page != null && e.page_to > row.page ? Math.min(e.page_to, lesson.slide_count) : null;
+            if (to != null || activities.some((x) => "page_to" in x)) row.page_to = to;
             if (!e.id) { row.lesson_id = lesson.id; row.sort = activities.length; }
             const saved = await save("activities", row, e.id);
             if (!saved) return;
