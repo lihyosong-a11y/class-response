@@ -250,17 +250,27 @@ function drawRoster(shown) {
     students.length ? h("p", { class: "muted small" }, "초록색: 지금 접속 중 · ✓: " + (lesson.slide_count ? "이 쪽" : "") + " 활동에 답함") : h("span", {}));
 }
 
-function runBlock(a) {
-  // 시뮬레이션의 shared 칸 = 학생 화면에서 숨김(원래 화면을 보여 줌)
-  if (a.kind === "sim") return h("section", { class: "card stack" },
+// 시뮬레이션의 shared 칸 = 학생 화면에서 숨김(원래 화면을 보여 줌).
+// 슬라이드 수업에서 「시뮬레이션 보이기」는 학생 메인 화면(슬라이드 자리)에 크게 띄운다.
+function simRunBlock(a) {
+  const slides = lesson.slide_count > 0;
+  const showing = !a.shared && (a.sim_full || !slides);
+  const status = a.shared ? "학생 화면: 원래 화면 (시뮬레이션 숨김)"
+    : !slides ? "학생 화면: 시뮬레이션 카드"
+    : a.sim_full ? "학생 화면: 메인 화면에 시뮬레이션" : "학생 화면: 슬라이드 아래 시뮬레이션 카드";
+  return h("section", { class: "card stack" },
     h("div", { class: "row between" },
       h("div", {}, h("p", { class: "muted small" }, "시뮬레이션 · " + whereText(a)), h("h2", {}, a.title)),
       h("button", { class: "ghost", type: "button", onclick() { openSimFull(a.title, a.html); } }, "크게 실행")),
     h("div", { class: "row between" },
-      h("p", { class: a.shared ? "pill" : "pill on" }, a.shared ? "학생 화면: 원래 화면 (시뮬레이션 숨김)"
-        : a.sim_full && lesson.slide_count ? "학생 화면: 슬라이드 자리에 시뮬레이션" : "학생 화면: 슬라이드 아래 시뮬레이션 카드"),
-      h("button", { class: a.shared ? "primary" : "ghost", type: "button", async onclick() { await setActivity(a, { shared: !a.shared }); } },
-        a.shared ? "시뮬레이션 보이기" : "원래 화면 보이기")));
+      h("p", { class: showing ? "pill on" : "pill" }, status),
+      h("button", { class: showing ? "ghost" : "primary", type: "button", async onclick() {
+        await setActivity(a, showing ? { shared: true } : slides ? { shared: false, sim_full: true } : { shared: false });
+      } }, showing ? "원래 화면 보이기" : "시뮬레이션 보이기")));
+}
+
+function runBlock(a) {
+  if (a.kind === "sim") return simRunBlock(a);
   if (isInfoActivity(a)) return h("section", { class: "card stack" },
     h("div", { class: "row between" },
       h("div", {}, h("p", { class: "muted small" }, "설명 카드 · " + whereText(a)), h("h2", {}, a.title)),
