@@ -311,7 +311,10 @@ function fileButton(d, q) {
     if (error) return alert("파일을 받지 못했습니다: " + error.message);
     if (!data) return alert("파일이 없습니다.");
     const s = studentById(d.r.student_id);
-    const url = URL.createObjectURL(new Blob(["﻿" + data.content], { type: "text/csv;charset=utf-8" }));
+    // 사진은 data URL(글자)로 저장되어 있다
+    const blob = data.content.startsWith("data:image/") ? await (await fetch(data.content)).blob()
+      : new Blob(["﻿" + data.content], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
     const link = h("a", { href: url, download: ((s ? s.class_no + "_" + s.name + "_" : "") + data.name).replace(/[\\/:*?"<>|]/g, "_") });
     document.body.append(link);
     link.click();
@@ -484,7 +487,7 @@ function editor() {
     return h("section", { class: "card stack editor" },
       h("h2", {}, e.id ? "설명 카드 고치기" : "설명 카드 만들기"),
       h("label", {}, "제목", title), h("label", {}, "설명문", body),
-      h("label", { class: "check" }, uploadOn, "학생에게 파일 받기 (CSV 등 글자 파일, 최대 2MB)"), uploadText,
+      h("label", { class: "check" }, uploadOn, "학생에게 파일 받기 (CSV 등 글자 파일 최대 2MB, 또는 사진)"), uploadText,
       h("p", { class: "muted small" }, "파일 받기를 켜지 않으면 학생은 이 카드에 답을 입력하지 않습니다."), msg,
       h("div", { class: "row between" },
         e.id ? h("button", { class: "ghost danger", type: "button", async onclick() {

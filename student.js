@@ -342,6 +342,24 @@ function simCard(a) {
   return c.el;
 }
 
+// 올릴 사진: 긴 변 1600px JPG로 줄여 data URL(글자)로 보낸다. 서버 한도(200만 자)를 넘으면 화질을 낮춘다
+async function shrinkImage(f) {
+  const img = await createImageBitmap(f);
+  const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+  const canvas = h("canvas", { width: Math.round(img.width * scale), height: Math.round(img.height * scale) });
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#fff";   // 투명한 PNG는 흰 바탕으로
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  for (const quality of [0.85, 0.7, 0.5, 0.35]) {
+    const content = canvas.toDataURL("image/jpeg", quality);
+    if (content.length <= 2000000) {
+      return { name: f.name.replace(/\.[^.]*$/, "") + ".jpg", size: Math.round(content.length * 0.75), content };
+    }
+  }
+  throw new Error("too big");
+}
+
 // ---------- 활동 카드 ----------
 function draftKey(a) { return "cra-draft:" + token + ":" + a.id; }
 
@@ -427,13 +445,20 @@ function buildForm(c) {
         const v = values[q.id];
         info.textContent = v && v.name ? "올린 파일: " + v.name + " (" + fmtSize(v.size) + ")" : "아직 올린 파일이 없습니다.";
       };
-      const input = h("input", { type: "file", accept: ".csv,.txt,text/csv,text/plain", disabled: quizDone, async onchange() {
+      const input = h("input", { type: "file", accept: ".csv,.txt,text/csv,text/plain,image/*", disabled: quizDone, async onchange() {
         const f = input.files[0];
         if (!f) return;
         err.textContent = "";
-        if (f.size > 2000000) { err.textContent = "파일이 너무 큽니다(최대 2MB)."; input.value = ""; return; }
+        const isImage = f.type.startsWith("image/");
+        if (f.size > (isImage ? 30000000 : 2000000)) { err.textContent = "파일이 너무 큽니다(글자 파일 최대 2MB)."; input.value = ""; return; }
+        info.textContent = isImage ? "사진 줄이는 중…" : "올리는 중…";
+        let file;
+        try { file = isImage ? await shrinkImage(f) : { name: f.name, size: f.size, content: await f.text() }; } catch (e) {
+          err.textContent = "이 사진은 열 수 없습니다. JPG나 PNG로 바꿔 올려 주세요.";
+          input.value = ""; showInfo(); return;
+        }
         info.textContent = "올리는 중…";
-        const { data, error } = await sb.rpc("student_file", { p_token: token, p_activity: a.id, p_question: q.id, p_name: f.name, p_content: await f.text() });
+        const { data, error } = await sb.rpc("student_file", { p_token: token, p_activity: a.id, p_question: q.id, p_name: file.name, p_content: file.content });
         input.value = "";
         if (!error && data.error === "logged_out") return logout("다시 입장해 주세요.");
         if (error || data.error) {
@@ -442,7 +467,7 @@ function buildForm(c) {
           showInfo();
           return;
         }
-        values[q.id] = { name: f.name, size: f.size };
+        values[q.id] = { name: file.name, size: file.size };
         saveDraft();
         showInfo();
         // 다른 질문에 모두 답했으면 바로 저장한다(퀴즈는 직접 제출)
