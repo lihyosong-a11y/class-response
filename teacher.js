@@ -276,7 +276,12 @@ function runBlock(a) {
       h("div", {}, h("p", { class: "muted small" }, "설명 카드 · " + whereText(a)), h("h2", {}, a.title)),
       h("button", { type: "button", class: a.shared ? "ghost" : "primary", async onclick() { await setActivity(a, { shared: !a.shared }); } }, a.shared ? "공개 끝내기" : "학생에게 공개")),
     h("p", { class: a.shared ? "pill on" : "pill" }, a.shared ? "학생에게 공개 중" : "학생에게는 보이지 않음"),
-    linkedDescription(a.questions[0].text));
+    linkedDescription(a.questions[0].text),
+    answerQuestions(a).length ? [
+      h("p", { class: "muted small" }, "파일 제출 " + docsOf(a).length + " / " + students.length + "명"),
+      summaryView(a.questions, docsOf(a), { fileButton }),
+      h("button", { class: "ghost", type: "button", onclick() { openModal(a.title + " · 학생별", responseTable(a)); } }, "학생별 표"),
+    ] : null);
   const docs = docsOf(a);
   const scored = docs.filter((d) => d.r.total);
   const avg = scored.length ? (scored.reduce((s, d) => s + d.r.score / d.r.total, 0) / scored.length * 100).toFixed(0) + "점" : null;
@@ -318,12 +323,12 @@ function fileButton(d, q) {
 function responseTable(a) {
   return h("div", { class: "table-wrap" }, h("table", {},
     h("thead", {}, h("tr", {}, h("th", {}, "학번"), h("th", {}, "이름"), a.kind === "quiz" ? h("th", {}, "점수") : null,
-      a.questions.map((q, i) => h("th", {}, (i + 1) + ". " + q.text)), h("th", {}, "저장"))),
+      answerQuestions(a).map((q, i) => h("th", {}, (i + 1) + ". " + q.text)), h("th", {}, "저장"))),
     h("tbody", {}, students.map((s) => {
       const r = responses.find((x) => x.activity_id === a.id && x.student_id === s.id);
       return h("tr", { class: r ? "" : "missing" }, h("td", {}, s.class_no), h("td", {}, s.name),
         a.kind === "quiz" ? h("td", {}, r && r.total ? r.score + "/" + r.total : "") : null,
-        a.questions.map((q) => h("td", {}, r ? answerText(r.answers[q.id]) : "",
+        answerQuestions(a).map((q) => h("td", {}, r ? answerText(r.answers[q.id]) : "",
           r && q.type === "file" && r.answers[q.id] ? [" ", fileButton({ r }, q)] : null)),
         h("td", {}, r ? fmtTime(r.updated_at) : "미제출"));
     }))));
@@ -467,10 +472,20 @@ function editor() {
     const msg = h("p", { class: "error" });
     const title = h("input", { type: "text", maxlength: 100, value: e.title, placeholder: "예: 활동 안내", oninput() { e.title = title.value; } });
     const body = h("textarea", { rows: 10, maxlength: 15000, placeholder: "설명과 링크를 입력하세요. https:// 주소는 학생 화면에서 클릭할 수 있습니다.", oninput() { e.questions[0].text = body.value; } }, e.questions[0].text || "");
+    // 학생 파일 받기: 설명문 뒤에 「파일 올리기」 질문 하나를 붙인다(끄면 지운다)
+    let upload = e.questions.find((q) => q.type === "file");
+    const uploadText = h("input", { type: "text", maxlength: 300, value: upload ? upload.text : "측정한 CSV 파일을 올리세요", oninput() { if (upload) upload.text = uploadText.value; } });
+    uploadText.hidden = !upload;
+    const uploadOn = h("input", { type: "checkbox", checked: !!upload, onchange() {
+      if (uploadOn.checked) { upload = upload || { id: newId(), type: "file", text: uploadText.value }; e.questions = [e.questions[0], upload]; }
+      else e.questions = [e.questions[0]];
+      uploadText.hidden = !uploadOn.checked;
+    } });
     return h("section", { class: "card stack editor" },
       h("h2", {}, e.id ? "설명 카드 고치기" : "설명 카드 만들기"),
       h("label", {}, "제목", title), h("label", {}, "설명문", body),
-      h("p", { class: "muted small" }, "학생은 이 카드에 답을 입력하지 않습니다."), msg,
+      h("label", { class: "check" }, uploadOn, "학생에게 파일 받기 (CSV 등 글자 파일, 최대 2MB)"), uploadText,
+      h("p", { class: "muted small" }, "파일 받기를 켜지 않으면 학생은 이 카드에 답을 입력하지 않습니다."), msg,
       h("div", { class: "row between" },
         e.id ? h("button", { class: "ghost danger", type: "button", async onclick() {
           if (!confirm("설명 카드를 지울까요?")) return;
@@ -483,6 +498,7 @@ function editor() {
           h("button", { class: "primary", type: "button", async onclick() {
             e.title = e.title.trim(); e.questions[0].text = e.questions[0].text.trim();
             if (!e.title || !e.questions[0].text) { msg.textContent = "제목과 설명문을 입력하세요."; return; }
+            if (upload && uploadOn.checked && !(upload.text = upload.text.trim())) { msg.textContent = "파일 받기 안내 문장을 입력하세요."; return; }
             const row = { kind: "survey", title: e.title, page: e.page, show_answer: false, named: false, questions: e.questions };
             if (!e.id) { row.lesson_id = lesson.id; row.sort = activities.length; }
             const saved = await save("activities", row, e.id);
@@ -966,12 +982,12 @@ async function removeSlideFiles(l) {
 
 // ---------- CSV ----------
 function downloadCSV(acts, fileName) {
-  acts = acts.filter((a) => a.kind !== "sim");
+  acts = acts.filter((a) => a.kind !== "sim" && answerQuestions(a).length);
   const cell = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
   const head = ["학번", "이름"];
   acts.forEach((a) => {
     if (a.kind === "quiz") head.push(a.title + " · 점수");
-    a.questions.forEach((q, i) => head.push(a.title + " · " + (i + 1) + ". " + q.text));
+    answerQuestions(a).forEach((q, i) => head.push(a.title + " · " + (i + 1) + ". " + q.text));
     head.push(a.title + " · 저장 시각");
   });
   const lines = [head.map(cell).join(",")];
@@ -980,7 +996,7 @@ function downloadCSV(acts, fileName) {
     acts.forEach((a) => {
       const r = responses.find((x) => x.activity_id === a.id && x.student_id === s.id);
       if (a.kind === "quiz") row.push(r && r.total ? r.score + "/" + r.total : "");
-      a.questions.forEach((q) => row.push(r ? answerText(r.answers[q.id]) : ""));
+      answerQuestions(a).forEach((q) => row.push(r ? answerText(r.answers[q.id]) : ""));
       row.push(r ? new Date(r.updated_at).toLocaleString("ko-KR") : "");
     });
     lines.push(row.map(cell).join(","));

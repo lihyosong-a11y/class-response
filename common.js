@@ -132,8 +132,14 @@ function activityDescription(activity) {
     [...new Set(questions.map((q) => q.description).filter(Boolean))].join("\n\n");
 }
 
+// 설명 카드: 첫 질문이 설명문(info). 뒤에 「파일 올리기」 질문 하나가 붙을 수 있다
 function isInfoActivity(activity) {
-  return activity.kind === "survey" && activity.questions?.length === 1 && activity.questions[0].type === "info";
+  return activity.kind === "survey" && activity.questions?.[0]?.type === "info";
+}
+
+// 학생이 답하는 질문만(설명 카드의 설명문은 뺀다)
+function answerQuestions(activity) {
+  return (activity.questions || []).filter((q) => q.type !== "info");
 }
 
 function activityName(activity) {
@@ -143,7 +149,7 @@ function activityName(activity) {
 // 응답 모아 보기: 고르는 질문은 막대, 글은 목록. docs = [{ name, answers }]
 function summaryView(questions, docs, opts) {
   opts = opts || {};
-  return questions.map((q, i) => {
+  return questions.filter((q) => q.type !== "info").map((q, i) => {
     const answered = docs.filter((d) => !isEmptyAnswer(d.answers[q.id]));
     const head = h("p", { class: "sum-q" }, (i + 1) + ". " + q.text);
     if (q.type === "choice" || q.type === "multi") {

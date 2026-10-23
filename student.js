@@ -375,7 +375,9 @@ function cardFor(a) {
 
 function buildForm(c) {
   const a = c.a;
-  if (isInfoActivity(a)) {
+  const info = isInfoActivity(a);
+  const qs = answerQuestions(a);
+  if (info && !qs.length) {
     c.refresh = () => {};
     c.form.replaceChildren(
       h("div", { class: "card-head" }, h("h2", {}, a.title), h("span", { class: "badge" }, "설명 카드")),
@@ -398,9 +400,9 @@ function buildForm(c) {
     err.textContent = "";
     c.refresh();
   };
-  const dirty = () => a.questions.some((q) => JSON.stringify(values[q.id] ?? "") !== JSON.stringify((a.mine || {})[q.id] ?? ""));
+  const dirty = () => qs.some((q) => JSON.stringify(values[q.id] ?? "") !== JSON.stringify((a.mine || {})[q.id] ?? ""));
 
-  const rows = a.questions.map((q, i) => {
+  const rows = qs.map((q, i) => {
     const label = (i + 1) + ". " + q.text;
     let control;
     if (q.type === "choice" || q.type === "multi") {
@@ -444,7 +446,7 @@ function buildForm(c) {
         saveDraft();
         showInfo();
         // 다른 질문에 모두 답했으면 바로 저장한다(퀴즈는 직접 제출)
-        if (a.kind !== "quiz" && !a.questions.some((x) => isEmptyAnswer(values[x.id]))) save();
+        if (a.kind !== "quiz" && !qs.some((x) => isEmptyAnswer(values[x.id]))) save();
       } });
       showInfo();
       control = h("label", {}, label, input, info);
@@ -464,11 +466,11 @@ function buildForm(c) {
   });
 
   async function save() {
-    const missing = a.questions.findIndex((q) => isEmptyAnswer(values[q.id]));
+    const missing = qs.findIndex((q) => isEmptyAnswer(values[q.id]));
     if (missing >= 0) { err.textContent = (missing + 1) + "번 질문에 답해 주세요."; return; }
     if (a.kind === "quiz" && !confirm("퀴즈는 한 번만 제출할 수 있습니다. 제출할까요?")) return;
     const answers = {};
-    a.questions.forEach((q) => { answers[q.id] = typeof values[q.id] === "string" ? values[q.id].trim() : values[q.id]; });
+    qs.forEach((q) => { answers[q.id] = typeof values[q.id] === "string" ? values[q.id].trim() : values[q.id]; });
     sending = true;
     c.refresh();
     const { data, error } = await sb.rpc("student_save", { p_token: token, p_activity: a.id, p_answers: answers });
@@ -503,8 +505,8 @@ function buildForm(c) {
   };
 
   c.form.replaceChildren(...[
-    h("div", { class: "card-head" }, h("h2", {}, a.title), h("span", { class: "badge" }, KIND_NAME[a.kind])),
-    activityDescription(a) ? copyableDescription(activityDescription(a)) : null,
+    h("div", { class: "card-head" }, h("h2", {}, a.title), h("span", { class: "badge" }, activityName(a))),
+    info ? copyableDescription(a.questions[0].text) : activityDescription(a) ? copyableDescription(activityDescription(a)) : null,
     quizDone && a.total ? h("p", { class: "score" }, "점수 " + a.score + " / " + a.total) : null,
     rows, err, btn, status].flat().filter(Boolean));
 }
