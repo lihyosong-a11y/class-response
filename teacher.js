@@ -305,7 +305,38 @@ function runBlock(a) {
       h("button", { class: "ghost", type: "button", onclick() { openModal(a.title, h("div", { class: "big-view" }, summaryView(a.questions, docsOf(a), { fileButton }))); } }, "크게 보기"),
       hasFileQuestion(a) ? h("button", { class: "ghost", type: "button", onclick() { openPhotos(a); } }, "사진 모아 보기") : null,
       h("button", { class: "ghost", type: "button", onclick() { openModal(a.title + " · 학생별", responseTable(a)); } }, "학생별 표"),
+      h("button", { class: "ghost", type: "button", onclick() { openPick(a); } }, "무작위 뽑기"),
       h("button", { class: "ghost", type: "button", onclick() { downloadCSV([a], lesson.code + "_" + a.title); } }, "CSV")));
+}
+
+// 무작위 뽑기: 이 활동에 응답한 학생 중 몇 명을 골라 이름과 답을 크게 보인다(TV로 띄워 함께 본다)
+function openPick(a) {
+  const qs = answerQuestions(a);
+  const count = h("input", { type: "number", min: 1, max: 50, value: 5, class: "pick-count" });
+  const info = h("span", { class: "muted" });
+  const list = h("div", { class: "pick-grid" });
+  const pick = () => {
+    const docs = docsOf(a);
+    const n = Math.min(Math.max(Math.round(Number(count.value)) || 5, 1), 50);
+    count.value = n;
+    for (let i = docs.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [docs[i], docs[j]] = [docs[j], docs[i]];
+    }
+    const picked = docs.slice(0, n);
+    info.textContent = "응답 " + docs.length + "명 중 " + picked.length + "명";
+    list.replaceChildren(...(picked.length ? picked.map((d) => h("div", { class: "pick-card" },
+      h("h3", {}, d.name),
+      qs.map((q, i) => [
+        qs.length > 1 ? h("p", { class: "sum-q" }, (i + 1) + ". " + q.text) : null,
+        h("p", { class: "note" }, answerText(d.answers[q.id]) || "—")]))) : [h("p", { class: "muted" }, "아직 응답한 학생이 없습니다.")]));
+  };
+  pick();
+  openModal(a.title + " · 무작위 뽑기", h("div", { class: "big-view" },
+    qs.length === 1 ? h("p", { class: "sum-q" }, qs[0].text) : null,
+    h("div", { class: "row" }, h("label", { class: "row" }, "인원", count),
+      h("button", { class: "primary", type: "button", onclick: pick }, "다시 뽑기"), info),
+    list));
 }
 
 // 사진 모아 보기: 이 활동에 학생들이 올린 사진을 한 화면에(TV로 띄워 함께 본다). 누르면 크게
