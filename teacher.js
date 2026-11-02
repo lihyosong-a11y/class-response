@@ -129,7 +129,9 @@ async function save(table, row, id) {
   return data[0];
 }
 
-const nameOf = (s) => s.class_no + " " + s.name;
+const nameOf = studentLabel;
+// 학번 칸은 학번이 있는 예전 계정이 있을 때만 보인다
+const hasClassNo = () => students.some((s) => s.class_no);
 const studentById = (id) => students.find((s) => s.id === id);
 const docsOf = (a) => responses.filter((r) => r.activity_id === a.id && studentById(r.student_id))
   .map((r) => ({ name: nameOf(studentById(r.student_id)), answers: r.answers, r }));
@@ -338,7 +340,7 @@ function fileButton(d, q) {
     const blob = data.content.startsWith("data:image/") ? await (await fetch(data.content)).blob()
       : new Blob(["﻿" + data.content], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const link = h("a", { href: url, download: ((s ? s.class_no + "_" + s.name + "_" : "") + data.name).replace(/[\\/:*?"<>|]/g, "_") });
+    const link = h("a", { href: url, download: ((s ? nameOf(s).replace(" ", "_") + "_" : "") + data.name).replace(/[\\/:*?"<>|]/g, "_") });
     document.body.append(link);
     link.click();
     link.remove();
@@ -348,11 +350,11 @@ function fileButton(d, q) {
 
 function responseTable(a) {
   return h("div", { class: "table-wrap" }, h("table", {},
-    h("thead", {}, h("tr", {}, h("th", {}, "학번"), h("th", {}, "이름"), a.kind === "quiz" ? h("th", {}, "점수") : null,
+    h("thead", {}, h("tr", {}, hasClassNo() ? h("th", {}, "학번") : null, h("th", {}, "이름"), a.kind === "quiz" ? h("th", {}, "점수") : null,
       answerQuestions(a).map((q, i) => h("th", {}, (i + 1) + ". " + q.text)), h("th", {}, "저장"))),
     h("tbody", {}, students.map((s) => {
       const r = responses.find((x) => x.activity_id === a.id && x.student_id === s.id);
-      return h("tr", { class: r ? "" : "missing" }, h("td", {}, s.class_no), h("td", {}, s.name),
+      return h("tr", { class: r ? "" : "missing" }, hasClassNo() ? h("td", {}, s.class_no) : null, h("td", {}, s.name),
         a.kind === "quiz" ? h("td", {}, r && r.total ? r.score + "/" + r.total : "") : null,
         answerQuestions(a).map((q) => h("td", {}, r ? answerText(r.answers[q.id]) : "",
           r && q.type === "file" && r.answers[q.id] ? [" ", fileButton({ r }, q)] : null)),
@@ -680,29 +682,13 @@ function flash(text) {
 
 // ---------- 학생 관리 ----------
 function drawStudents() {
-  const now = Date.now();
   const rows = students.map((s) => {
     const mine = responses.filter((r) => r.student_id === s.id);
     const last = mine.reduce((t, r) => (r.updated_at > t ? r.updated_at : t), "");
-    const locked = s.locked_until && Date.parse(s.locked_until) > now;
-    const status = locked ? h("span", { class: "tag warn" }, "잠김 · " + Math.ceil((Date.parse(s.locked_until) - now) / 60000) + "분 남음")
-      : !s.pin_set ? h("span", { class: "tag info" }, "초기화됨 · 새 비밀번호 기다리는 중")
-      : h("span", { class: "tag ok" }, "정상");
-    return h("tr", { class: locked ? "locked" : "" },
-      h("td", {}, s.class_no), h("td", {}, s.name),
-      h("td", {}, mine.length + " / " + activities.filter((a) => a.kind !== "sim").length), h("td", {}, fmtTime(last)), h("td", {}, status),
+    return h("tr", {},
+      hasClassNo() ? h("td", {}, s.class_no) : null, h("td", {}, s.name),
+      h("td", {}, mine.length + " / " + activities.filter((a) => a.kind !== "sim").length), h("td", {}, fmtTime(last)),
       h("td", { class: "actions" },
-        h("button", {
-          class: locked ? "primary" : "ghost", type: "button", disabled: !s.pin_set && !locked,
-          async onclick() {
-            if (!confirm(nameOf(s) + " 학생의 비밀번호를 초기화할까요?\n모든 수업에 함께 적용됩니다. 쓴 답은 그대로 남고, 다음에 들어올 때 새 비밀번호를 정합니다.")) return;
-            const { error } = await sb.from("students").update({ pin_hash: null, token: null, fails: 0, locked_until: null }).eq("id", s.id);
-            if (error) return alert(error.message);
-            await loadResponses();
-            drawStudents();
-            flash("초기화했습니다.");
-          },
-        }, "비밀번호 초기화"),
         h("button", {
           class: "link danger", type: "button",
           async onclick() {
@@ -733,9 +719,9 @@ function drawStudents() {
   main.replaceChildren(h("section", { class: "card stack" },
     h("div", { class: "row between wrap" },
       h("h2", {}, "학생 " + students.length + "명"),
-      h("p", { class: "muted small" }, "학생 계정은 웹앱 전체에 하나라서, 어느 수업에서든 같은 학번·이름·비밀번호를 씁니다. 비밀번호는 암호화되어 교사도 볼 수 없습니다. 잊은 학생은 초기화해 주세요.")),
+      h("p", { class: "muted small" }, "학생은 이름만 넣고 들어옵니다. 입력한 이름이 본인인지 확인하지 않으며, 이름이 같아도 기기가 다르면 다른 학생으로 나옵니다.")),
     students.length ? h("div", { class: "table-wrap" }, h("table", {},
-      h("thead", {}, h("tr", {}, ["학번", "이름", "저장한 활동", "마지막 저장", "상태", ""].map((t) => h("th", {}, t)))),
+      h("thead", {}, h("tr", {}, [hasClassNo() ? "학번" : null, "이름", "저장한 활동", "마지막 저장", ""].filter((t) => t !== null).map((t) => h("th", {}, t)))),
       h("tbody", {}, rows))) : h("p", { class: "muted" }, "아직 입장한 학생이 없습니다.")));
 }
 
@@ -1022,7 +1008,7 @@ async function removeSlideFiles(l) {
 function downloadCSV(acts, fileName) {
   acts = acts.filter((a) => a.kind !== "sim" && answerQuestions(a).length);
   const cell = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
-  const head = ["학번", "이름"];
+  const head = hasClassNo() ? ["학번", "이름"] : ["이름"];
   acts.forEach((a) => {
     if (a.kind === "quiz") head.push(a.title + " · 점수");
     answerQuestions(a).forEach((q, i) => head.push(a.title + " · " + (i + 1) + ". " + q.text));
@@ -1030,7 +1016,7 @@ function downloadCSV(acts, fileName) {
   });
   const lines = [head.map(cell).join(",")];
   students.forEach((s) => {
-    const row = [s.class_no, s.name];
+    const row = hasClassNo() ? [s.class_no, s.name] : [s.name];
     acts.forEach((a) => {
       const r = responses.find((x) => x.activity_id === a.id && x.student_id === s.id);
       if (a.kind === "quiz") row.push(r && r.total ? r.score + "/" + r.total : "");

@@ -29,6 +29,11 @@ function h(tag, attrs, ...kids) {
   return el;
 }
 
+// 학생 표시 이름. 이름만으로 들어온 학생은 학번이 비어 있다
+function studentLabel(s) {
+  return s.class_no ? s.class_no + " " + s.name : s.name;
+}
+
 // 슬라이드 그림 주소. 보통은 "폴더/1.png". 폴더 칸에 {n}을 넣으면 그 자리에 쪽 번호가 들어간다
 // (예: "slides/슬라이드{n}.PNG" → PowerPoint가 내보낸 이름을 그대로 쓸 때).
 // 활동이 이 쪽에 보이는지. page부터 page_to까지(page_to가 없으면 page 한 쪽)

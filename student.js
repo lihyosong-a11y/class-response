@@ -1,4 +1,4 @@
-// 학생 화면: 입장(학번 + 이름 + 비밀번호) → 슬라이드를 따라가며 질문에 답한다.
+// 학생 화면: 입장(이름) → 슬라이드를 따라가며 질문에 답한다.
 // 3초마다 서버에서 수업 상태를 받아 온다(교사가 넘긴 쪽, 제출 열림, 공개된 응답).
 
 const app = document.getElementById("app");
@@ -57,7 +57,7 @@ function showCodeOnly(notice) {
         enterLesson(codeIn.value);
       },
     }, h("label", {}, "수업 코드", codeIn), h("button", { class: "primary big", type: "submit" }, "입장하기"), msg),
-    h("p", { class: "center" }, h("button", { class: "link", type: "button", onclick() { logout(""); } }, me ? me + " 학생이 아니면: 다른 학생으로 들어가기" : "다른 학생으로 들어가기"))));
+    h("p", { class: "center" }, h("button", { class: "link", type: "button", onclick() { if (confirm("다른 학생으로 들어가면 이 기기에서 지금까지 쓴 답을 다시 열 수 없습니다. 계속할까요?")) logout(""); } }, me ? me + " 학생이 아니면: 다른 학생으로 들어가기" : "다른 학생으로 들어가기"))));
   codeIn.focus();
 }
 
@@ -68,69 +68,36 @@ function showEntry(notice) {
   cards.clear();
   const fromLink = !!params.get("c");
   const codeIn = h("input", { type: "text", value: code, autocomplete: "off", maxlength: 20, placeholder: "예: K7P2Q", autocapitalize: "characters", required: true });
-  const noIn = h("input", { type: "text", autocomplete: "off", maxlength: 20, inputmode: "numeric", placeholder: "예: 20243030", required: true });
   const nameIn = h("input", { type: "text", autocomplete: "off", maxlength: 20, required: true });
-  const pinIn = h("input", { type: "password", inputmode: "numeric", maxlength: 4, autocomplete: "off", required: true });
-  const pin2In = h("input", { type: "password", inputmode: "numeric", maxlength: 4, autocomplete: "off" });
-  const pin2Row = h("label", { hidden: true }, "비밀번호 한 번 더", pin2In);
   const msg = h("p", { class: "msg" }, notice || "");
   const btn = h("button", { class: "primary big", type: "submit" }, "입장하기");
-  let confirming = false;
-
-  // 이름이나 번호를 바꾸면 확인 단계를 처음부터 다시
-  [codeIn, noIn, nameIn].forEach((el) => el.addEventListener("input", () => {
-    confirming = false;
-    pin2Row.hidden = true;
-  }));
 
   const form = h("form", {
     class: "card stack",
     async onsubmit(e) {
       e.preventDefault();
-      const pin = pinIn.value.trim();
-      if (!/^\d{4}$/.test(pin)) { msg.textContent = "비밀번호는 숫자 4자리로 입력하세요."; return; }
-      if (confirming && pin2In.value.trim() !== pin) { msg.textContent = "두 비밀번호가 다릅니다. 다시 입력하세요."; return; }
       btn.disabled = true;
       msg.textContent = "확인 중…";
-      const { data, error } = await sb.rpc("student_enter", {
-        p_code: codeIn.value, p_class_no: noIn.value, p_name: nameIn.value, p_pin: pin, p_confirm: confirming,
-      });
+      const { data, error } = await sb.rpc("student_join", { p_code: codeIn.value, p_name: nameIn.value });
       btn.disabled = false;
       if (error) { msg.textContent = "연결하지 못했습니다. 인터넷을 확인하고 다시 시도하세요. (" + error.message + ")"; return; }
       const err = data.error;
       if (err === "no_lesson") msg.textContent = "수업 코드를 찾지 못했습니다. 선생님께 받은 코드를 확인하세요.";
-      else if (err === "bad_name") msg.textContent = "학번과 이름을 확인하세요(각각 20자까지).";
-      else if (err === "bad_pin") msg.textContent = "비밀번호는 숫자 4자리로 입력하세요.";
+      else if (err === "bad_name") msg.textContent = "이름을 확인하세요(20자까지).";
       else if (err === "full") msg.textContent = "이 수업은 인원이 가득 찼습니다. 선생님께 알려 주세요.";
-      else if (err === "need_confirm") {
-        confirming = true;
-        pin2Row.hidden = false;
-        pin2In.value = "";
-        pin2In.focus();
-        msg.textContent = data.reset
-          ? "선생님이 비밀번호를 초기화했습니다. 새 비밀번호를 한 번 더 입력하고 입장하세요."
-          : "처음 들어왔네요. 지금 입력한 번호가 내 비밀번호가 됩니다. 한 번 더 입력하고 입장하세요.";
-      } else if (err === "wrong_pin") msg.textContent = "비밀번호가 틀렸습니다. " + data.left + "번 더 틀리면 10분 동안 잠깁니다.";
-      else if (err === "locked") msg.textContent = "비밀번호를 여러 번 틀려 잠겼습니다. " + data.minutes + "분 뒤에 다시 하거나 선생님께 초기화를 부탁하세요.";
       else if (data.token) {
         token = data.token;
         code = data.code;
         localStorage.setItem("cra-last-code", code);
         localStorage.setItem(TOKEN_KEY, token);
-        localStorage.setItem(ME_KEY, data.class_no + " " + data.name);
+        localStorage.setItem(ME_KEY, studentLabel(data));
         following = true;
         poll();
       } else msg.textContent = "알 수 없는 오류입니다. 다시 시도하세요.";
     },
   },
     fromLink ? null : h("label", {}, "수업 코드", codeIn),
-    h("label", {}, "학번", noIn),
     h("label", {}, "이름", nameIn),
-    h("label", {}, "비밀번호 (숫자 4자리)", pinIn),
-    pin2Row,
-    h("div", { class: "tip" },
-      h("strong", {}, "처음 들어오나요?"),
-      h("p", {}, "처음 입력한 번호가 내 비밀번호가 됩니다. 다른 수업에서도 같은 학번·이름·비밀번호를 씁니다. 휴대폰 비밀번호나 생일은 쓰지 마세요.")),
     btn, msg);
 
   app.replaceChildren(h("main", { class: "narrow" },
@@ -138,8 +105,8 @@ function showEntry(notice) {
       h("p", { class: "eyebrow" }, fromLink ? "수업 코드 " + code : "수업 응답"),
       h("h1", {}, "입장하기")),
     form,
-    h("p", { class: "muted small center" }, "비밀번호를 잊었다면 선생님께 말하세요. 초기화해도 쓴 답은 지워지지 않습니다.")));
-  (fromLink ? noIn : codeIn).focus();
+    h("p", { class: "muted small center" }, "내가 쓴 답은 이 기기에 연결됩니다. 다른 기기나 시크릿 창에서 들어오면 새 학생으로 시작합니다.")));
+  (fromLink ? nameIn : codeIn).focus();
 }
 
 function logout(notice) {
@@ -167,7 +134,7 @@ async function poll() {
     if (shell) shell.conn.hidden = false;
     else showEntry("연결하지 못했습니다. 인터넷을 확인하고 다시 입장하세요.");
   } else if (data.error === "logged_out") {
-    return logout("다시 입장해 주세요. 선생님이 비밀번호를 초기화했거나 학생 정보가 지워졌습니다.");
+    return logout("다시 입장해 주세요. 학생 정보가 지워졌습니다.");
   } else {
     apply(data);
   }
@@ -213,7 +180,7 @@ function buildShell() {
     h("header", { class: "top" }, h("div", { class: "top-title" }, title, who),
       h("div", { class: "row" },
         h("button", { class: "link", type: "button", onclick() { history.replaceState(null, "", location.pathname); showCodeOnly(); } }, "다른 수업"),
-        h("button", { class: "link", type: "button", onclick() { logout("나갔습니다. 다시 들어오려면 입장하세요."); } }, "나가기"))),
+        h("button", { class: "link", type: "button", onclick() { if (confirm("나가면 이 기기에서 지금까지 쓴 답을 다시 열 수 없습니다. 다시 입장하면 새 학생으로 시작합니다. 나갈까요?")) logout("나갔습니다. 다시 들어오려면 입장하세요."); } }, "나가기"))),
     h("main", { class: "lesson" }, conn, closed, slideBox, list));
   const anytimeHead = h("h2", { class: "section-head" }, "언제든 할 수 있는 활동");
   const empty = h("p", { class: "muted center" });
@@ -255,7 +222,7 @@ function render(pageChanged) {
   const L = state.lesson;
   const hasSlides = L.slide_count > 0;
   shell.title.textContent = L.title;
-  shell.who.textContent = state.me.class_no + " " + state.me.name;
+  shell.who.textContent = studentLabel(state.me);
   shell.closed.hidden = L.open;
   shell.slideBox.hidden = !hasSlides;
   if (hasSlides) {
