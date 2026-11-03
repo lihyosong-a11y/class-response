@@ -162,9 +162,8 @@ main.lesson .slide { cursor: zoom-in; }
 .big-view .bar-track { height: 24px; border-radius: 12px; }
 .big-view .note { font-size: 1.25rem; }
 .pick-count { width: 5rem; }
-.pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
-.pick-card { display: grid; gap: .5rem; align-content: start; border: 1px solid var(--line); border-radius: 12px; padding: 1rem; }
-.pick-card h3 { margin: 0; font-size: 1.6rem; }
+.pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
+.pick-card { border: 1px solid var(--line); border-radius: 12px; padding: 1.5rem 1rem; text-align: center; font-size: 2.2rem; font-weight: 700; overflow-wrap: anywhere; }
 
 /* 교사: 탭 */
 .tabs { display: flex; flex-wrap: wrap; gap: .25rem; }

@@ -309,9 +309,8 @@ function runBlock(a) {
       h("button", { class: "ghost", type: "button", onclick() { downloadCSV([a], lesson.code + "_" + a.title); } }, "CSV")));
 }
 
-// 무작위 뽑기: 이 활동에 응답한 학생 중 몇 명을 골라 이름과 답을 크게 보인다(TV로 띄워 함께 본다)
+// 무작위 뽑기: 이 활동에 응답한 학생 중 몇 명을 골라 이름만 크게 보인다(TV로 띄워 함께 본다. 답은 보이지 않는다)
 function openPick(a) {
-  const qs = answerQuestions(a);
   const count = h("input", { type: "number", min: 1, max: 50, value: 5, class: "pick-count" });
   const info = h("span", { class: "muted" });
   const list = h("div", { class: "pick-grid" });
@@ -325,15 +324,11 @@ function openPick(a) {
     }
     const picked = docs.slice(0, n);
     info.textContent = "응답 " + docs.length + "명 중 " + picked.length + "명";
-    list.replaceChildren(...(picked.length ? picked.map((d) => h("div", { class: "pick-card" },
-      h("h3", {}, d.name),
-      qs.map((q, i) => [
-        qs.length > 1 ? h("p", { class: "sum-q" }, (i + 1) + ". " + q.text) : null,
-        h("p", { class: "note" }, answerText(d.answers[q.id]) || "—")]))) : [h("p", { class: "muted" }, "아직 응답한 학생이 없습니다.")]));
+    list.replaceChildren(...(picked.length ? picked.map((d) => h("div", { class: "pick-card" }, d.name))
+      : [h("p", { class: "muted" }, "아직 응답한 학생이 없습니다.")]));
   };
   pick();
   openModal(a.title + " · 무작위 뽑기", h("div", { class: "big-view" },
-    qs.length === 1 ? h("p", { class: "sum-q" }, qs[0].text) : null,
     h("div", { class: "row" }, h("label", { class: "row" }, "인원", count),
       h("button", { class: "primary", type: "button", onclick: pick }, "다시 뽑기"), info),
     list));
