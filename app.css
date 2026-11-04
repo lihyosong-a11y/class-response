@@ -135,6 +135,8 @@ main.lesson .slide { cursor: zoom-in; }
 .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: .5rem; }
 .question { display: grid; gap: .4rem; }
 .question-description { margin: 0; padding: .65rem .8rem; background: var(--bg); border-left: 3px solid var(--accent); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pick-card.new { border: 3px solid var(--accent); background: var(--accent-soft); color: var(--accent-ink); animation: pick-in .35s ease-out; }
+@keyframes pick-in { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .question-description a { color: var(--accent-ink); text-decoration: underline; }
 .description-box { gap: .4rem; }
 .description-box .row { justify-content: flex-end; }
@@ -161,7 +163,6 @@ main.lesson .slide { cursor: zoom-in; }
 .big-view .bar-row { font-size: 1.2rem; }
 .big-view .bar-track { height: 24px; border-radius: 12px; }
 .big-view .note { font-size: 1.25rem; }
-.pick-count { width: 5rem; }
 .pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
 .pick-card { border: 1px solid var(--line); border-radius: 12px; padding: 1.5rem 1rem; text-align: center; font-size: 2.2rem; font-weight: 700; overflow-wrap: anywhere; }
 

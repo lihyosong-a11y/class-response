@@ -309,28 +309,29 @@ function runBlock(a) {
       h("button", { class: "ghost", type: "button", onclick() { downloadCSV([a], lesson.code + "_" + a.title); } }, "CSV")));
 }
 
-// 무작위 뽑기: 이 활동에 응답한 학생 중 몇 명을 골라 이름만 크게 보인다(TV로 띄워 함께 본다. 답은 보이지 않는다)
+// 무작위 뽑기: 「뽑기」를 누를 때마다 이 활동에 응답한 학생 중 한 명씩 이름만 크게 보인다
+// (TV로 띄워 함께 본다. 답은 보이지 않는다. 이미 뽑힌 학생은 다시 나오지 않는다)
 function openPick(a) {
-  const count = h("input", { type: "number", min: 1, max: 50, value: 5, class: "pick-count" });
+  const picked = [];
   const info = h("span", { class: "muted" });
   const list = h("div", { class: "pick-grid" });
-  const pick = () => {
-    const docs = docsOf(a);
-    const n = Math.min(Math.max(Math.round(Number(count.value)) || 5, 1), 50);
-    count.value = n;
-    for (let i = docs.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [docs[i], docs[j]] = [docs[j], docs[i]];
-    }
-    const picked = docs.slice(0, n);
-    info.textContent = "응답 " + docs.length + "명 중 " + picked.length + "명";
-    list.replaceChildren(...(picked.length ? picked.map((d) => h("div", { class: "pick-card" }, d.name))
-      : [h("p", { class: "muted" }, "아직 응답한 학생이 없습니다.")]));
+  const show = () => {
+    const total = docsOf(a).length;
+    info.textContent = "응답 " + total + "명 중 " + picked.length + "명 뽑음";
+    list.replaceChildren(...(picked.length ? picked.map((d, i) => h("div", { class: "pick-card" + (i === picked.length - 1 ? " new" : "") }, d.name))
+      : [h("p", { class: "muted" }, total ? "「뽑기」를 누르면 한 명씩 나옵니다." : "아직 응답한 학생이 없습니다.")]));
   };
-  pick();
+  const pickOne = () => {
+    const left = docsOf(a).filter((d) => !picked.some((p) => p.r.student_id === d.r.student_id));
+    if (!left.length) { show(); info.textContent += " · 모두 뽑았습니다"; return; }
+    picked.push(left[Math.floor(Math.random() * left.length)]);
+    show();
+  };
+  show();
   openModal(a.title + " · 무작위 뽑기", h("div", { class: "big-view" },
-    h("div", { class: "row" }, h("label", { class: "row" }, "인원", count),
-      h("button", { class: "primary", type: "button", onclick: pick }, "다시 뽑기"), info),
+    h("div", { class: "row" },
+      h("button", { class: "primary", type: "button", onclick: pickOne }, "뽑기"),
+      h("button", { class: "ghost", type: "button", onclick() { picked.length = 0; show(); } }, "처음부터"), info),
     list));
 }
 
